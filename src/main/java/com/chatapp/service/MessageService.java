@@ -135,10 +135,16 @@ public class MessageService {
             dto.setCreatedAt(m.getCreateTime());
 
             if (m.getResourceId() != null) {
-                dto.setCoverUrl("/api/files/" + m.getResourceId());
+                FileResource r = resourcesById.get(m.getResourceId());
+                if (r != null) {
+                    dto.setCoverUrl(storageUrlService.toPublicUrl(r.getStoragePath()));
+                }
             }
             if (m.getVideoResourceId() != null) {
-                dto.setVideoUrl("/api/files/" + m.getVideoResourceId());
+                FileResource r = resourcesById.get(m.getVideoResourceId());
+                if (r != null) {
+                    dto.setVideoUrl(storageUrlService.toPublicUrl(r.getStoragePath()));
+                }
             }
 
             dtos.add(dto);

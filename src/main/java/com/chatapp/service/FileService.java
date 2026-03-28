@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.util.UUID;
@@ -43,13 +42,11 @@ public class FileService {
      * 处理普通文件上传
      */
     @Transactional
-    public FileUploadResponse handleFileUpload(MultipartFile file, Long userId, String resolvedContentType) throws Exception {
+    public FileUploadResponse handleFileUpload(MultipartFile file, Long userId) throws Exception {
         File tempFile = saveTempFile(file);
         
         try {
-            String contentType = resolvedContentType != null && !resolvedContentType.isBlank()
-                    ? resolvedContentType
-                    : file.getContentType();
+            String contentType = file.getContentType();
             String objectName = generateObjectName(file.getOriginalFilename());
             String storagePath = uploadToMinio(tempFile, objectName, contentType);
 
@@ -68,7 +65,7 @@ public class FileService {
             
             FileUploadResponse response = new FileUploadResponse();
             response.setFileId(saved.getId());
-            response.setUrl("/api/files/" + saved.getId());
+            response.setUrl(storageUrlService.toPublicUrl(saved.getStoragePath()));
             response.setFileType(saved.getFileType().name());
             response.setSourceType(saved.getSourceType());
             response.setOriginalName(saved.getOriginalName());
@@ -135,8 +132,8 @@ public class FileService {
             FileUploadResponse response = new FileUploadResponse();
             response.setCoverId(savedCover.getId());
             response.setVideoId(savedVideo.getId());
-            response.setCoverUrl("/api/files/" + savedCover.getId());
-            response.setVideoUrl("/api/files/" + savedVideo.getId());
+            response.setCoverUrl(storageUrlService.toPublicUrl(savedCover.getStoragePath()));
+            response.setVideoUrl(storageUrlService.toPublicUrl(savedVideo.getStoragePath()));
             response.setFileType("DYNAMIC_PHOTO");
             response.setSourceType("iOS_LivePhoto");
             response.setVerified(metadata.isVerified());
@@ -209,8 +206,8 @@ public class FileService {
             FileUploadResponse response = new FileUploadResponse();
             response.setCoverId(savedCover.getId());
             response.setVideoId(savedVideo.getId());
-            response.setCoverUrl("/api/files/" + savedCover.getId());
-            response.setVideoUrl("/api/files/" + savedVideo.getId());
+            response.setCoverUrl(storageUrlService.toPublicUrl(savedCover.getStoragePath()));
+            response.setVideoUrl(storageUrlService.toPublicUrl(savedVideo.getStoragePath()));
             response.setFileType("DYNAMIC_PHOTO");
             response.setSourceType("Android_MotionPhoto");
             response.setVideoOffset(metadata == null ? null : metadata.getVideoOffset());
@@ -230,76 +227,17 @@ public class FileService {
     /**
      * 流式传输文件
      */
-    public void streamFile(Long id, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void streamFile(Long id, HttpServletResponse response) throws Exception {
         FileResource resource = fileResourceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("File not found"));
-
-        String contentType = resource.getMimeType();
-        if (contentType == null || contentType.isBlank()) {
-            contentType = "application/octet-stream";
-        }
-
-        Long total = resource.getFileSize();
-        if (total == null || total <= 0) {
-            total = null;
-        }
-
-        response.setHeader("Accept-Ranges", "bytes");
-        response.setContentType(contentType);
-
-        String range = request.getHeader("Range");
-        if (range != null && range.startsWith("bytes=") && total != null) {
-            long start;
-            long end;
-            String raw = range.substring("bytes=".length());
-            int dash = raw.indexOf('-');
-            if (dash < 0) {
-                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
-                response.setHeader("Content-Range", "bytes */" + total);
-                return;
-            }
-            String startStr = raw.substring(0, dash).trim();
-            String endStr = raw.substring(dash + 1).trim();
-            try {
-                start = startStr.isEmpty() ? 0 : Long.parseLong(startStr);
-                end = endStr.isEmpty() ? (total - 1) : Long.parseLong(endStr);
-            } catch (NumberFormatException e) {
-                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
-                response.setHeader("Content-Range", "bytes */" + total);
-                return;
-            }
-
-            if (start < 0 || end < start || start >= total) {
-                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
-                response.setHeader("Content-Range", "bytes */" + total);
-                return;
-            }
-            if (end >= total) {
-                end = total - 1;
-            }
-
-            long length = end - start + 1;
-            response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-            response.setHeader("Content-Range", "bytes " + start + "-" + end + "/" + total);
-            response.setHeader("Content-Length", String.valueOf(length));
-
-            try (InputStream stream = minioClient.getObject(
-                    GetObjectArgs.builder()
-                            .bucket(bucket)
-                            .object(resource.getStoragePath())
-                            .offset(start)
-                            .length(length)
-                            .build())) {
-                stream.transferTo(response.getOutputStream());
-            }
-            return;
-        }
-
-        if (total != null) {
-            response.setHeader("Content-Length", String.valueOf(total));
-        }
+        
         try (InputStream stream = minioClient.getObject(
                 GetObjectArgs.builder().bucket(bucket).object(resource.getStoragePath()).build())) {
+            
+            String contentType = resource.getMimeType();
+            response.setContentType(contentType == null || contentType.isBlank()
+                    ? "application/octet-stream"
+                    : contentType);
             stream.transferTo(response.getOutputStream());
         }
     }
@@ -313,7 +251,7 @@ public class FileService {
 
         FileUploadResponse response = new FileUploadResponse();
         response.setFileId(resource.getId());
-        response.setUrl("/api/files/" + resource.getId());
+        response.setUrl(storageUrlService.toPublicUrl(resource.getStoragePath()));
         response.setFileType(resource.getFileType().name());
         response.setSourceType(resource.getSourceType());
         response.setOriginalName(resource.getOriginalName());

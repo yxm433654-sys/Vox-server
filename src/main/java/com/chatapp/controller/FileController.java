@@ -11,7 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Arrays;
@@ -56,15 +55,9 @@ public class FileController {
             }
 
             String contentType = file.getContentType();
-            if (contentType != null) {
-                contentType = contentType.trim().toLowerCase();
-            }
-            if (contentType == null || contentType.isBlank() || "application/octet-stream".equals(contentType)) {
-                contentType = inferContentType(file.getOriginalFilename());
-            }
             if (contentType == null) {
-                return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                        .body(ApiResponse.error("Unsupported file type: unknown"));
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Unknown file type"));
             }
 
             // 检查文件类型
@@ -78,7 +71,7 @@ public class FileController {
                     file.getOriginalFilename(), contentType, file.getSize());
 
             // 处理上传
-            FileUploadResponse response = fileService.handleFileUpload(file, userId, contentType);
+            FileUploadResponse response = fileService.handleFileUpload(file, userId);
 
             return ResponseEntity.ok(ApiResponse.success(response));
 
@@ -87,23 +80,6 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Upload failed: " + e.getMessage()));
         }
-    }
-
-    private static String inferContentType(String originalFilename) {
-        if (originalFilename == null || originalFilename.isBlank()) {
-            return null;
-        }
-        String name = originalFilename.toLowerCase();
-        int dot = name.lastIndexOf('.');
-        String ext = dot >= 0 ? name.substring(dot + 1) : "";
-        return switch (ext) {
-            case "jpg", "jpeg" -> "image/jpeg";
-            case "png" -> "image/png";
-            case "heic" -> "image/heic";
-            case "mp4" -> "video/mp4";
-            case "mov" -> "video/quicktime";
-            default -> null;
-        };
     }
 
     /**
@@ -178,9 +154,9 @@ public class FileController {
      * @param response HTTP响应
      */
     @GetMapping("/{id}")
-    public void getFile(@PathVariable Long id, HttpServletRequest request, HttpServletResponse response) {
+    public void getFile(@PathVariable Long id, HttpServletResponse response) {
         try {
-            fileService.streamFile(id, request, response);
+            fileService.streamFile(id, response);
         } catch (Exception e) {
             log.error("Failed to get file: id={}", id, e);
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
