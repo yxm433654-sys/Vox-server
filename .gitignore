@@ -1,0 +1,53 @@
+# Maven / Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.log
+hs_err_pid*
+
+# Spring Boot
+*.pid
+*.pid.lock
+
+# Logs
+logs/
+log/
+*.log.*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+.factorypath
+
+# Build / temp
+out/
+bin/
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*.bak
+
+# Test reports
+surefire-reports/
+failsafe-reports/
