@@ -17,6 +17,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -27,6 +29,7 @@ public class VideoCoverService {
     private final MinioClient minioClient;
     private final FileResourceRepository fileResourceRepository;
     private final FFmpegService ffmpegService;
+    private final MessageService messageService;
     private final ObjectProvider<VideoCoverService> selfProvider;
 
     @Value("${minio.bucket}")
@@ -98,13 +101,10 @@ public class VideoCoverService {
         }
 
         try {
-            try {
-                ffmpegService.extractCoverFrame(tempVideo, outCover, 0.5f);
-            } catch (Exception first) {
-                ffmpegService.extractCoverFrame(tempVideo, outCover, 1.5f);
-            }
+            extractCoverWithFallbacks(tempVideo, outCover);
 
             if (!outCover.exists() || outCover.length() <= 0) {
+                markCoverFailed(cover);
                 return;
             }
 
@@ -122,13 +122,63 @@ public class VideoCoverService {
             cover.setFileSize(outCover.length());
             cover.setMimeType("image/jpeg");
             cover.setSourceType("VideoCover");
-            fileResourceRepository.save(cover);
+            FileResource saved = fileResourceRepository.save(cover);
+            messageService.pushMediaRefreshByResourceId(saved.getId());
 
         } catch (Exception e) {
+            markCoverFailed(cover);
             log.warn("Failed to generate/upload video cover: videoId={}, coverId={}", videoId, coverId, e);
         } finally {
             safeDelete(tempVideo);
             safeDelete(outCover);
+        }
+    }
+
+    private void extractCoverWithFallbacks(File tempVideo, File outCover) throws Exception {
+        float duration = 0f;
+        try {
+            duration = ffmpegService.getVideoDuration(tempVideo);
+        } catch (Exception ignored) {
+        }
+
+        Set<Float> candidates = new LinkedHashSet<>();
+        candidates.add(0f);
+        candidates.add(0.08f);
+        candidates.add(0.35f);
+        candidates.add(0.75f);
+        if (duration > 0f) {
+            candidates.add(Math.min(duration * 0.12f, 1.2f));
+            candidates.add(Math.min(duration * 0.25f, 2.5f));
+            candidates.add(Math.max(0f, duration / 2f));
+            candidates.add(Math.max(0f, duration - 0.1f));
+        }
+
+        Exception lastError = null;
+        for (float candidate : candidates) {
+            safeDelete(outCover);
+            try {
+                ffmpegService.extractCoverFrame(tempVideo, outCover, candidate);
+                if (outCover.exists() && outCover.length() > 0) {
+                    return;
+                }
+            } catch (Exception e) {
+                lastError = e;
+            }
+        }
+
+        if (lastError != null) {
+            throw lastError;
+        }
+        throw new IllegalStateException("No usable cover frame extracted");
+    }
+
+    private void markCoverFailed(FileResource cover) {
+        try {
+            cover.setSourceType("VideoCoverFailed");
+            cover.setFileSize(0L);
+            FileResource saved = fileResourceRepository.save(cover);
+            messageService.pushMediaRefreshByResourceId(saved.getId());
+        } catch (Exception ignored) {
         }
     }
 

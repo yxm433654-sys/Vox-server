@@ -3,14 +3,14 @@ package com.chatapp.service;
 import com.chatapp.dto.FileUploadResponse;
 import com.chatapp.entity.FileResource;
 import com.chatapp.repository.FileResourceRepository;
-import com.chatapp.service.parser.LivePhotoParser;
-import com.chatapp.service.parser.MotionPhotoParser;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,9 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Set;
@@ -34,10 +35,9 @@ public class FileService {
     private final MinioClient minioClient;
     private final FileResourceRepository fileResourceRepository;
     private final StorageUrlService storageUrlService;
-    private final LivePhotoParser livePhotoParser;
-    private final MotionPhotoParser motionPhotoParser;
     private final FFmpegService ffmpegService;
     private final VideoCoverService videoCoverService;
+    private final DynamicPhotoProcessingService dynamicPhotoProcessingService;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -64,14 +64,10 @@ public class FileService {
             "video/3gpp2"
     );
 
-    /**
-     * 处理普通文件上传
-     */
     @Transactional
     public FileUploadResponse handleFileUpload(MultipartFile file, Long userId) throws Exception {
         File tempFile = saveTempFile(file);
-        File outCoverToDelete = null;
-        
+
         try {
             String contentType = resolveMimeType(file.getContentType(), file.getOriginalFilename(), tempFile);
             if (contentType == null || "application/octet-stream".equals(contentType)) {
@@ -80,6 +76,7 @@ public class FileService {
             if (!isAllowedImage(contentType) && !isAllowedVideo(contentType)) {
                 throw new IllegalArgumentException("Unsupported file type: " + contentType);
             }
+
             String objectName = generateObjectName(file.getOriginalFilename());
             String storagePath = uploadToMinio(tempFile, objectName, contentType);
 
@@ -94,77 +91,38 @@ public class FileService {
             resource.setFileSize(file.getSize());
             resource.setUploaderId(userId);
 
-            // 对普通视频：上传时同步抽帧生成封面，并尽量补齐元数据（宽高/时长），避免前端轮询导致灰占位。
-            Float duration = null;
-            Integer width = null;
-            Integer height = null;
-            File outCover = null;
-            String coverObjectName = null;
             if (resource.getFileType() == FileResource.FileType.VIDEO) {
                 try {
-                    duration = ffmpegService.getVideoDuration(tempFile);
+                    resource.setDuration(ffmpegService.getVideoDuration(tempFile));
                 } catch (Exception ignored) {
                 }
                 try {
                     int[] wh = ffmpegService.getVideoDimensions(tempFile);
                     if (wh != null && wh.length == 2) {
-                        width = wh[0];
-                        height = wh[1];
+                        resource.setWidth(wh[0]);
+                        resource.setHeight(wh[1]);
                     }
                 } catch (Exception ignored) {
                 }
-
-                try {
-                    File dir = tempFile.getParentFile() == null ? new File(tempDir) : tempFile.getParentFile();
-                    outCover = new File(dir, UUID.randomUUID() + "_cover.jpg");
-                    outCoverToDelete = outCover;
-                    try {
-                        ffmpegService.extractCoverFrame(tempFile, outCover, 0.5f);
-                    } catch (Exception first) {
-                        ffmpegService.extractCoverFrame(tempFile, outCover, 1.5f);
-                    }
-                    if (outCover.exists() && outCover.length() > 0) {
-                        coverObjectName = "video/cover_" + UUID.randomUUID() + ".jpg";
-                        minioClient.putObject(
-                                PutObjectArgs.builder()
-                                        .bucket(bucket)
-                                        .object(coverObjectName)
-                                        .stream(new FileInputStream(outCover), outCover.length(), -1)
-                                        .contentType("image/jpeg")
-                                        .build()
-                        );
-                    }
-                } catch (Exception e) {
-                    log.warn("Generate video cover failed (will continue without cover): {}", e.getMessage());
-                }
             }
-
-            resource.setDuration(duration);
-            resource.setWidth(width);
-            resource.setHeight(height);
 
             FileResource saved = fileResourceRepository.save(resource);
             Long coverId = null;
             String coverUrl = null;
-            if (saved.getFileType() == FileResource.FileType.VIDEO && coverObjectName != null) {
-                FileResource cover = new FileResource();
-                cover.setOriginalName(file.getOriginalFilename());
-                cover.setStoragePath(coverObjectName);
-                cover.setFileType(FileResource.FileType.IMAGE);
-                cover.setSourceType("VideoCover");
-                cover.setMimeType("image/jpeg");
-                cover.setFileSize(outCover == null ? 0L : outCover.length());
-                cover.setUploaderId(userId);
-                cover.setRelatedFileId(saved.getId());
-                FileResource savedCover = fileResourceRepository.save(cover);
-
-                saved.setRelatedFileId(savedCover.getId());
-                fileResourceRepository.save(saved);
-
-                coverId = savedCover.getId();
-                coverUrl = storageUrlService.toClientUrl(savedCover.getId(), savedCover.getStoragePath());
+            if (saved.getFileType() == FileResource.FileType.VIDEO) {
+                FileResource savedCover = videoCoverService.createPlaceholderAndSchedule(
+                        saved,
+                        file.getOriginalFilename(),
+                        userId
+                );
+                if (savedCover != null) {
+                    coverId = savedCover.getId();
+                    if (!"VideoCoverPending".equals(savedCover.getSourceType())) {
+                        coverUrl = storageUrlService.toClientUrl(savedCover.getId(), savedCover.getStoragePath());
+                    }
+                }
             }
-            
+
             FileUploadResponse response = new FileUploadResponse();
             response.setFileId(saved.getId());
             response.setUrl(storageUrlService.toClientUrl(saved.getId(), saved.getStoragePath()));
@@ -180,166 +138,93 @@ public class FileService {
             response.setDuration(saved.getDuration());
             response.setCreatedAt(saved.getCreateTime());
             response.setUploaderId(saved.getUploaderId());
-            
             return response;
         } finally {
-            if (outCoverToDelete != null) {
-                try {
-                    outCoverToDelete.delete();
-                } catch (Exception ignored) {
-                }
-            }
             tempFile.delete();
         }
     }
 
-    /**
-     * 处理Live Photo上传
-     */
     @Transactional
-    public FileUploadResponse handleLivePhotoUpload(MultipartFile jpeg, MultipartFile mov, Long userId) 
+    public FileUploadResponse handleLivePhotoUpload(MultipartFile jpeg, MultipartFile mov, Long userId)
             throws Exception {
-        
         File jpegFile = saveTempFile(jpeg);
         File movFile = saveTempFile(mov);
-        
-        try {
-            LivePhotoParser.LivePhotoMetadata metadata = livePhotoParser.extractMetadata(jpegFile, movFile);
-            
-            // 转码视频
-            File transcodedVideo = new File(tempDir, UUID.randomUUID() + "_transcoded.mp4");
-            ffmpegService.transcodeToMp4(movFile, transcodedVideo);
-            
-            // 上传文件
-            String coverPath = uploadToMinio(jpegFile, "dynamic/cover_" + UUID.randomUUID() + ".jpg",
-                    "image/jpeg");
-            String videoPath = uploadToMinio(transcodedVideo, "dynamic/video_" + UUID.randomUUID() + ".mp4",
-                    "video/mp4");
 
-            FileResource coverResource = new FileResource();
-            coverResource.setOriginalName(jpeg.getOriginalFilename());
-            coverResource.setStoragePath(coverPath);
-            coverResource.setFileType(FileResource.FileType.DYNAMIC_COVER);
-            coverResource.setSourceType("iOS_LivePhoto");
-            coverResource.setMimeType("image/jpeg");
-            coverResource.setFileSize(jpeg.getSize());
-            coverResource.setUploaderId(userId);
+        FileResource savedCover = createPendingDynamicResource(
+                jpeg.getOriginalFilename(),
+                "dynamic/cover_" + UUID.randomUUID() + ".jpg",
+                FileResource.FileType.DYNAMIC_COVER,
+                "iOS_LivePhoto",
+                userId
+        );
+        FileResource savedVideo = createPendingDynamicResource(
+                mov.getOriginalFilename(),
+                "dynamic/video_" + UUID.randomUUID() + ".mp4",
+                FileResource.FileType.DYNAMIC_VIDEO,
+                "iOS_LivePhoto",
+                userId
+        );
+        savedCover.setRelatedFileId(savedVideo.getId());
+        savedVideo.setRelatedFileId(savedCover.getId());
+        fileResourceRepository.save(savedCover);
+        fileResourceRepository.save(savedVideo);
 
-            FileResource savedCover = fileResourceRepository.save(coverResource);
+        dynamicPhotoProcessingService.scheduleLivePhotoProcessing(
+                jpegFile.getAbsolutePath(),
+                movFile.getAbsolutePath(),
+                savedCover.getId(),
+                savedVideo.getId()
+        );
 
-            FileResource videoResource = new FileResource();
-            videoResource.setOriginalName(mov.getOriginalFilename());
-            videoResource.setStoragePath(videoPath);
-            videoResource.setFileType(FileResource.FileType.DYNAMIC_VIDEO);
-            videoResource.setSourceType("iOS_LivePhoto");
-            videoResource.setMimeType("video/mp4");
-            videoResource.setFileSize(transcodedVideo.length());
-            videoResource.setDuration(metadata.getDuration());
-            videoResource.setUploaderId(userId);
-            videoResource.setRelatedFileId(savedCover.getId());
-
-            FileResource savedVideo = fileResourceRepository.save(videoResource);
-            savedCover.setRelatedFileId(savedVideo.getId());
-            fileResourceRepository.save(savedCover);
-            
-            FileUploadResponse response = new FileUploadResponse();
-            response.setCoverId(savedCover.getId());
-            response.setVideoId(savedVideo.getId());
-            response.setCoverUrl(storageUrlService.toClientUrl(savedCover.getId(), savedCover.getStoragePath()));
-            response.setVideoUrl(storageUrlService.toClientUrl(savedVideo.getId(), savedVideo.getStoragePath()));
-            response.setFileType("DYNAMIC_PHOTO");
-            response.setSourceType("iOS_LivePhoto");
-            response.setVerified(metadata.isVerified());
-            response.setDuration(metadata.getDuration());
-            response.setCreatedAt(savedCover.getCreateTime());
-            response.setUploaderId(userId);
-            
-            transcodedVideo.delete();
-            return response;
-            
-        } finally {
-            jpegFile.delete();
-            movFile.delete();
-        }
+        FileUploadResponse response = new FileUploadResponse();
+        response.setCoverId(savedCover.getId());
+        response.setVideoId(savedVideo.getId());
+        response.setFileType("DYNAMIC_PHOTO");
+        response.setSourceType("iOS_LivePhoto");
+        response.setCreatedAt(savedCover.getCreateTime());
+        response.setUploaderId(userId);
+        return response;
     }
 
-    /**
-     * 处理Motion Photo上传
-     */
     @Transactional
     public FileUploadResponse handleMotionPhotoUpload(MultipartFile file, Long userId) throws Exception {
         File motionPhotoFile = saveTempFile(file);
-        
-        try {
-            String xmp = motionPhotoParser.extractXmpMetadata(motionPhotoFile);
-            MotionPhotoParser.MotionPhotoMetadata metadata = (xmp == null)
-                    ? null
-                    : motionPhotoParser.parseMetadata(xmp);
 
-            // 提取封面和视频
-            File outputDir = new File(tempDir);
-            File coverFile = motionPhotoParser.extractCoverImage(motionPhotoFile, outputDir);
-            File videoFile = motionPhotoParser.extractVideo(motionPhotoFile, outputDir);
-            
-            // 转码视频
-            File transcodedVideo = new File(tempDir, UUID.randomUUID() + "_transcoded.mp4");
-            ffmpegService.transcodeToMp4(videoFile, transcodedVideo);
-            
-            // 上传
-            String coverPath = uploadToMinio(coverFile, "dynamic/cover_" + UUID.randomUUID() + ".jpg", 
-                    "image/jpeg");
-            String videoPath = uploadToMinio(transcodedVideo, "dynamic/video_" + UUID.randomUUID() + ".mp4", 
-                    "video/mp4");
+        FileResource savedCover = createPendingDynamicResource(
+                file.getOriginalFilename(),
+                "dynamic/cover_" + UUID.randomUUID() + ".jpg",
+                FileResource.FileType.DYNAMIC_COVER,
+                "Android_MotionPhoto",
+                userId
+        );
+        FileResource savedVideo = createPendingDynamicResource(
+                file.getOriginalFilename(),
+                "dynamic/video_" + UUID.randomUUID() + ".mp4",
+                FileResource.FileType.DYNAMIC_VIDEO,
+                "Android_MotionPhoto",
+                userId
+        );
+        savedCover.setRelatedFileId(savedVideo.getId());
+        savedVideo.setRelatedFileId(savedCover.getId());
+        fileResourceRepository.save(savedCover);
+        fileResourceRepository.save(savedVideo);
 
-            FileResource coverResource = new FileResource();
-            coverResource.setOriginalName(file.getOriginalFilename());
-            coverResource.setStoragePath(coverPath);
-            coverResource.setFileType(FileResource.FileType.DYNAMIC_COVER);
-            coverResource.setSourceType("Android_MotionPhoto");
-            coverResource.setMimeType("image/jpeg");
-            coverResource.setFileSize(coverFile.length());
-            coverResource.setUploaderId(userId);
+        dynamicPhotoProcessingService.scheduleMotionPhotoProcessing(
+                motionPhotoFile.getAbsolutePath(),
+                savedCover.getId(),
+                savedVideo.getId()
+        );
 
-            FileResource savedCover = fileResourceRepository.save(coverResource);
-
-            FileResource videoResource = new FileResource();
-            videoResource.setOriginalName(file.getOriginalFilename());
-            videoResource.setStoragePath(videoPath);
-            videoResource.setFileType(FileResource.FileType.DYNAMIC_VIDEO);
-            videoResource.setSourceType("Android_MotionPhoto");
-            videoResource.setMimeType("video/mp4");
-            videoResource.setFileSize(transcodedVideo.length());
-            videoResource.setUploaderId(userId);
-            videoResource.setRelatedFileId(savedCover.getId());
-
-            FileResource savedVideo = fileResourceRepository.save(videoResource);
-            savedCover.setRelatedFileId(savedVideo.getId());
-            fileResourceRepository.save(savedCover);
-            
-            FileUploadResponse response = new FileUploadResponse();
-            response.setCoverId(savedCover.getId());
-            response.setVideoId(savedVideo.getId());
-            response.setCoverUrl(storageUrlService.toClientUrl(savedCover.getId(), savedCover.getStoragePath()));
-            response.setVideoUrl(storageUrlService.toClientUrl(savedVideo.getId(), savedVideo.getStoragePath()));
-            response.setFileType("DYNAMIC_PHOTO");
-            response.setSourceType("Android_MotionPhoto");
-            response.setVideoOffset(metadata == null ? null : metadata.getVideoOffset());
-            response.setCreatedAt(savedCover.getCreateTime());
-            response.setUploaderId(userId);
-            
-            coverFile.delete();
-            videoFile.delete();
-            transcodedVideo.delete();
-            return response;
-            
-        } finally {
-            motionPhotoFile.delete();
-        }
+        FileUploadResponse response = new FileUploadResponse();
+        response.setCoverId(savedCover.getId());
+        response.setVideoId(savedVideo.getId());
+        response.setFileType("DYNAMIC_PHOTO");
+        response.setSourceType("Android_MotionPhoto");
+        response.setCreatedAt(savedCover.getCreateTime());
+        response.setUploaderId(userId);
+        return response;
     }
 
-    /**
-     * 流式传输文件
-     */
     public void streamFile(Long id, HttpServletRequest request, HttpServletResponse response) throws Exception {
         FileResource resource = fileResourceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("File not found"));
@@ -441,9 +326,6 @@ public class FileService {
         }
     }
 
-    /**
-     * 获取文件信息
-     */
     public FileUploadResponse getFileInfo(Long id) {
         FileResource resource = fileResourceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("File not found"));
@@ -464,9 +346,6 @@ public class FileService {
         return response;
     }
 
-    /**
-     * 删除文件
-     */
     @Transactional
     public void deleteFile(Long id) throws Exception {
         FileResource resource = fileResourceRepository.findById(id)
@@ -514,15 +393,34 @@ public class FileService {
     }
 
     private String uploadToMinio(File file, String objectName, String contentType) throws Exception {
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(bucket)
-                        .object(objectName)
-                        .stream(new FileInputStream(file), file.length(), -1)
-                        .contentType(contentType)
-                        .build()
-        );
+        try (FileInputStream in = new FileInputStream(file)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(objectName)
+                            .stream(in, file.length(), -1)
+                            .contentType(contentType)
+                            .build()
+            );
+        }
         return objectName;
+    }
+
+    private FileResource createPendingDynamicResource(
+            String originalName,
+            String storagePath,
+            FileResource.FileType fileType,
+            String sourceType,
+            Long userId
+    ) {
+        FileResource resource = new FileResource();
+        resource.setOriginalName(originalName);
+        resource.setStoragePath(storagePath);
+        resource.setFileType(fileType);
+        resource.setSourceType(sourceType);
+        resource.setFileSize(0L);
+        resource.setUploaderId(userId);
+        return fileResourceRepository.save(resource);
     }
 
     private String generateObjectName(String originalFilename) {

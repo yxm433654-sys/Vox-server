@@ -80,4 +80,21 @@ public class MessageController {
                     .body(ApiResponse.error("Mark read failed: " + e.getMessage()));
         }
     }
+
+    @DeleteMapping("/conversation")
+    public ResponseEntity<ApiResponse<Void>> clearConversation(
+            @RequestParam("userId") Long userId,
+            @RequestParam("peerId") Long peerId
+    ) {
+        try {
+            int cleared = messageService.clearConversation(userId, peerId);
+            return ResponseEntity.ok(ApiResponse.success(null, "Cleared " + cleared + " messages"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("Clear conversation failed: userId={}, peerId={}", userId, peerId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Clear conversation failed: " + e.getMessage()));
+        }
+    }
 }

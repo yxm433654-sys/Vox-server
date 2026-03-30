@@ -63,7 +63,19 @@ public class UserService {
     public UserResponse getUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return toResponse(user);
+    }
 
+    public UserResponse getUserByUsername(String username) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("username is required");
+        }
+        User user = userRepository.findByUsername(username.trim())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return toResponse(user);
+    }
+
+    private UserResponse toResponse(User user) {
         UserResponse response = new UserResponse();
         response.setUserId(user.getId());
         response.setUsername(user.getUsername());

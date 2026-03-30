@@ -59,5 +59,62 @@ class FileControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false));
     }
+
+    @Test
+    void uploadLivePhoto_returnsPendingResourceIds() throws Exception {
+        FileUploadResponse resp = new FileUploadResponse();
+        resp.setCoverId(11L);
+        resp.setVideoId(12L);
+        resp.setFileType("DYNAMIC_PHOTO");
+        when(fileService.handleLivePhotoUpload(any(), any(), any())).thenReturn(resp);
+
+        MockMultipartFile jpeg = new MockMultipartFile(
+                "jpeg",
+                "live.jpg",
+                "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}
+        );
+        MockMultipartFile mov = new MockMultipartFile(
+                "mov",
+                "live.mov",
+                "video/quicktime",
+                new byte[]{0x00, 0x00, 0x00, 0x18}
+        );
+
+        mockMvc.perform(multipart("/api/files/upload/live-photo")
+                        .file(jpeg)
+                        .file(mov)
+                        .param("userId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.coverId").value(11))
+                .andExpect(jsonPath("$.data.videoId").value(12))
+                .andExpect(jsonPath("$.data.fileType").value("DYNAMIC_PHOTO"));
+    }
+
+    @Test
+    void uploadMotionPhoto_returnsPendingResourceIds() throws Exception {
+        FileUploadResponse resp = new FileUploadResponse();
+        resp.setCoverId(21L);
+        resp.setVideoId(22L);
+        resp.setFileType("DYNAMIC_PHOTO");
+        when(fileService.handleMotionPhotoUpload(any(), any())).thenReturn(resp);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "motion.jpg",
+                "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0x00}
+        );
+
+        mockMvc.perform(multipart("/api/files/upload/motion-photo")
+                        .file(file)
+                        .param("userId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.coverId").value(21))
+                .andExpect(jsonPath("$.data.videoId").value(22))
+                .andExpect(jsonPath("$.data.fileType").value("DYNAMIC_PHOTO"));
+    }
 }
 

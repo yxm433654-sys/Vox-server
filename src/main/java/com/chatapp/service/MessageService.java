@@ -2,6 +2,7 @@ package com.chatapp.service;
 
 import com.chatapp.dto.MessageDto;
 import com.chatapp.dto.MessageHistoryResponse;
+import com.chatapp.dto.MessageMediaDto;
 import com.chatapp.dto.MessageSendRequest;
 import com.chatapp.dto.MessageSendResponse;
 import com.chatapp.dto.Pagination;
@@ -106,6 +107,33 @@ public class MessageService {
         }
     }
 
+    @Transactional
+    public int clearConversation(Long userId, Long peerId) {
+        if (userId == null || peerId == null) {
+            throw new IllegalArgumentException("userId and peerId are required");
+        }
+        if (Objects.equals(userId, peerId)) {
+            throw new IllegalArgumentException("peerId must be different from userId");
+        }
+        return messageRepository.deleteConversation(userId, peerId);
+    }
+
+    public void pushMediaRefreshByResourceId(Long resourceId) {
+        if (resourceId == null) {
+            return;
+        }
+        List<Message> messages = messageRepository.findByResourceIdOrVideoResourceId(resourceId, resourceId);
+        if (messages.isEmpty()) {
+            return;
+        }
+        for (MessageDto dto : toDtos(messages)) {
+            webSocketPushService.pushNewMessage(dto.getSenderId(), dto);
+            if (!Objects.equals(dto.getSenderId(), dto.getReceiverId())) {
+                webSocketPushService.pushNewMessage(dto.getReceiverId(), dto);
+            }
+        }
+    }
+
     private List<MessageDto> toDtos(List<Message> messages) {
         if (messages.isEmpty()) {
             return List.of();
@@ -139,24 +167,128 @@ public class MessageService {
             dto.setStatus(m.getStatus());
             dto.setCreatedAt(m.getCreateTime());
 
+            FileResource coverResource = null;
+            FileResource playResource = null;
             if (m.getResourceId() != null) {
-                FileResource r = resourcesById.get(m.getResourceId());
-                if (r != null) {
-                    if (!"VideoCoverPending".equals(r.getSourceType())) {
-                    dto.setCoverUrl(storageUrlService.toClientUrl(r.getId(), r.getStoragePath()));
+                coverResource = resourcesById.get(m.getResourceId());
+                if (coverResource != null) {
+                    if (!"VideoCoverPending".equals(coverResource.getSourceType())) {
+                        dto.setCoverUrl(storageUrlService.toClientUrl(coverResource.getId(), coverResource.getStoragePath()));
                     }
                 }
             }
             if (m.getVideoResourceId() != null) {
-                FileResource r = resourcesById.get(m.getVideoResourceId());
-                if (r != null) {
-                    dto.setVideoUrl(storageUrlService.toClientUrl(r.getId(), r.getStoragePath()));
+                playResource = resourcesById.get(m.getVideoResourceId());
+                if (playResource != null) {
+                    dto.setVideoUrl(storageUrlService.toClientUrl(playResource.getId(), playResource.getStoragePath()));
                 }
             }
+            dto.setMedia(buildMediaDto(m, coverResource, playResource));
 
             dtos.add(dto);
         }
 
         return dtos;
+    }
+
+    private MessageMediaDto buildMediaDto(Message message, FileResource coverResource, FileResource playResource) {
+        if (message.getType() == Message.MessageType.TEXT) {
+            return null;
+        }
+
+        MessageMediaDto media = new MessageMediaDto();
+        media.setCoverUrl(resolveClientUrl(coverResource, true));
+        media.setPlayUrl(resolveClientUrl(playResource, false));
+        media.setResourceId(message.getResourceId());
+        media.setCoverResourceId(message.getResourceId());
+        media.setPlayResourceId(message.getVideoResourceId());
+
+        if (message.getType() == Message.MessageType.IMAGE) {
+            FileResource image = coverResource;
+            media.setMediaKind("IMAGE");
+            media.setProcessingStatus(image == null ? "FAILED" : "READY");
+            media.setPlayResourceId(message.getResourceId());
+            media.setPlayUrl(resolveClientUrl(image, false));
+            media.setWidth(image == null ? null : image.getWidth());
+            media.setHeight(image == null ? null : image.getHeight());
+            media.setAspectRatio(computeAspectRatio(
+                    image == null ? null : image.getWidth(),
+                    image == null ? null : image.getHeight()));
+            media.setSourceType(image == null ? null : image.getSourceType());
+            return media;
+        }
+
+        if (message.getType() == Message.MessageType.VIDEO) {
+            media.setMediaKind("VIDEO");
+            media.setProcessingStatus(resolveVideoStatus(coverResource, playResource));
+            media.setWidth(playResource == null ? null : playResource.getWidth());
+            media.setHeight(playResource == null ? null : playResource.getHeight());
+            media.setDuration(playResource == null ? null : playResource.getDuration());
+            media.setAspectRatio(computeAspectRatio(
+                    playResource == null ? null : playResource.getWidth(),
+                    playResource == null ? null : playResource.getHeight()));
+            media.setSourceType(playResource != null ? playResource.getSourceType()
+                    : (coverResource == null ? null : coverResource.getSourceType()));
+            return media;
+        }
+
+        media.setMediaKind("LIVE_PHOTO");
+        media.setProcessingStatus(resolveDynamicStatus(coverResource, playResource));
+        media.setWidth(playResource == null ? null : playResource.getWidth());
+        media.setHeight(playResource == null ? null : playResource.getHeight());
+        media.setDuration(playResource == null ? null : playResource.getDuration());
+        media.setAspectRatio(computeAspectRatio(
+                playResource == null ? null : playResource.getWidth(),
+                playResource == null ? null : playResource.getHeight()));
+        media.setSourceType(playResource != null ? playResource.getSourceType()
+                : (coverResource == null ? null : coverResource.getSourceType()));
+        return media;
+    }
+
+    private String resolveClientUrl(FileResource resource, boolean skipPendingVideoCover) {
+        if (resource == null) {
+            return null;
+        }
+        if (isPendingResource(resource)) {
+            return null;
+        }
+        if (skipPendingVideoCover && "VideoCoverPending".equals(resource.getSourceType())) {
+            return null;
+        }
+        return storageUrlService.toClientUrl(resource.getId(), resource.getStoragePath());
+    }
+
+    private String resolveVideoStatus(FileResource coverResource, FileResource playResource) {
+        if (playResource == null) {
+            return "FAILED";
+        }
+        if (coverResource == null || "VideoCoverPending".equals(coverResource.getSourceType())) {
+            return "PROCESSING";
+        }
+        if ("VideoCoverFailed".equals(coverResource.getSourceType())) {
+            return "READY";
+        }
+        return "READY";
+    }
+
+    private String resolveDynamicStatus(FileResource coverResource, FileResource playResource) {
+        if (coverResource == null || playResource == null) {
+            return "PROCESSING";
+        }
+        if (isPendingResource(coverResource) || isPendingResource(playResource)) {
+            return "PROCESSING";
+        }
+        return "READY";
+    }
+
+    private boolean isPendingResource(FileResource resource) {
+        return resource.getFileSize() == null || resource.getFileSize() <= 0;
+    }
+
+    private Float computeAspectRatio(Integer width, Integer height) {
+        if (width == null || height == null || width <= 0 || height <= 0) {
+            return null;
+        }
+        return width / (float) height;
     }
 }

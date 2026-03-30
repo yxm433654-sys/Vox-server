@@ -15,6 +15,7 @@ public class MessageDto {
     private Long videoResourceId;
     private String coverUrl;
     private String videoUrl;
+    private MessageMediaDto media;
     private String status;
     private LocalDateTime createdAt;
 }

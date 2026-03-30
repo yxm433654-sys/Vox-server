@@ -62,4 +62,23 @@ public class UserController {
                     .body(ApiResponse.error("Get user failed: " + e.getMessage()));
         }
     }
+
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<UserResponse>> searchByUsername(@RequestParam("username") String username) {
+        try {
+            UserResponse response = userService.getUserByUsername(username);
+            return ResponseEntity.ok(ApiResponse.success(response));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("Search user failed: username={}", username, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Search user failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/by-username")
+    public ResponseEntity<ApiResponse<UserResponse>> getByUsername(@RequestParam("username") String username) {
+        return searchByUsername(username);
+    }
 }
