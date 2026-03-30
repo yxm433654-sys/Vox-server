@@ -98,7 +98,12 @@ public class MessageService {
                 .orElseThrow(() -> new IllegalArgumentException("Message not found"));
         message.setStatus("READ");
         message.setReadTime(LocalDateTime.now());
-        messageRepository.save(message);
+        Message saved = messageRepository.save(message);
+
+        List<MessageDto> pushed = toDtos(List.of(saved));
+        if (!pushed.isEmpty()) {
+            webSocketPushService.pushNewMessage(saved.getSenderId(), pushed.get(0));
+        }
     }
 
     private List<MessageDto> toDtos(List<Message> messages) {
@@ -137,13 +142,15 @@ public class MessageService {
             if (m.getResourceId() != null) {
                 FileResource r = resourcesById.get(m.getResourceId());
                 if (r != null) {
-                    dto.setCoverUrl(storageUrlService.toPublicUrl(r.getStoragePath()));
+                    if (!"VideoCoverPending".equals(r.getSourceType())) {
+                    dto.setCoverUrl(storageUrlService.toClientUrl(r.getId(), r.getStoragePath()));
+                    }
                 }
             }
             if (m.getVideoResourceId() != null) {
                 FileResource r = resourcesById.get(m.getVideoResourceId());
                 if (r != null) {
-                    dto.setVideoUrl(storageUrlService.toPublicUrl(r.getStoragePath()));
+                    dto.setVideoUrl(storageUrlService.toClientUrl(r.getId(), r.getStoragePath()));
                 }
             }
 

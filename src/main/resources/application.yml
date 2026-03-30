@@ -64,7 +64,8 @@ ffmpeg:
   codec:
     video: libx264
     audio: aac
-  preset: slow
+  # 为了降低转码导致的上传/发送阻塞，使用更快的编码预设
+  preset: veryfast
   crf: 23
   audio-bitrate: 128k
   pixel-format: yuv420p

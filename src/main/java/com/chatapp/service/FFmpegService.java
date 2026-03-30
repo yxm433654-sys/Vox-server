@@ -45,8 +45,14 @@ public class FFmpegService {
     @Value("${ffmpeg.pixel-format:yuv420p}")
     private String pixelFormat;
 
+    @Value("${ffmpeg.cover-timeout:8}")
+    private int coverTimeoutSeconds;
+
     private static final Pattern DURATION_PATTERN = 
             Pattern.compile("Duration: (\\d{2}):(\\d{2}):(\\d{2})\\.(\\d{2})");
+
+    private static final Pattern DIMENSION_PATTERN =
+            Pattern.compile("(?i)\\b(\\d{2,5})x(\\d{2,5})\\b");
 
     /**
      * 转码视频为标准MP4格式
@@ -120,11 +126,17 @@ public class FFmpegService {
         
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
-        command.add("-i");
-        command.add(videoFile.getAbsolutePath());
+        // 通过 -ss 在 -i 之前实现更快定位到目标帧（牺牲少量精度换取速度）
         command.add("-ss");
         command.add(String.valueOf(timeSeconds));
-        command.add("-vframes");
+        // 降低探测开销，减少封面抽取前的额外等待
+        command.add("-analyzeduration");
+        command.add("0");
+        command.add("-probesize");
+        command.add("32k");
+        command.add("-i");
+        command.add(videoFile.getAbsolutePath());
+        command.add("-frames:v");
         command.add("1");
         command.add("-q:v");
         command.add("2"); // 高质量JPEG
@@ -139,7 +151,7 @@ public class FFmpegService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(coverTimeoutSeconds, TimeUnit.SECONDS);
             
             if (!finished) {
                 process.destroyForcibly();
@@ -203,6 +215,66 @@ public class FFmpegService {
 
         } catch (Exception e) {
             throw new TranscodeException("Failed to get video duration", e);
+        }
+    }
+
+    /**
+     * 获取视频宽高（像素）。
+     *
+     * 说明：为避免引入 ffprobe 额外依赖，这里复用 `ffmpeg -i` 的输出进行解析。
+     * 若解析失败则抛出异常，由上层按“可选元数据”处理。
+     */
+    public int[] getVideoDimensions(File videoFile) throws TranscodeException {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-i");
+        command.add(videoFile.getAbsolutePath());
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                }
+            }
+
+            process.waitFor(10, TimeUnit.SECONDS);
+
+            String s = output.toString();
+            // 优先在包含 "Video:" 的行里找第一个 WxH，降低误匹配概率
+            for (String line : s.split("\\R")) {
+                if (!line.toLowerCase().contains("video:")) {
+                    continue;
+                }
+                Matcher m = DIMENSION_PATTERN.matcher(line);
+                if (m.find()) {
+                    int w = Integer.parseInt(m.group(1));
+                    int h = Integer.parseInt(m.group(2));
+                    if (w > 0 && h > 0) {
+                        return new int[]{w, h};
+                    }
+                }
+            }
+
+            // 回退：全局找一次
+            Matcher m = DIMENSION_PATTERN.matcher(s);
+            if (m.find()) {
+                int w = Integer.parseInt(m.group(1));
+                int h = Integer.parseInt(m.group(2));
+                if (w > 0 && h > 0) {
+                    return new int[]{w, h};
+                }
+            }
+
+            throw new TranscodeException("Could not parse video dimensions");
+        } catch (Exception e) {
+            throw new TranscodeException("Failed to get video dimensions", e);
         }
     }
 

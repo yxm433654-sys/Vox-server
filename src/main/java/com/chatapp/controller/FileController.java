@@ -11,10 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
 
 /**
  * 文件上传/下载控制器
@@ -26,14 +24,6 @@ import java.util.List;
 public class FileController {
 
     private final FileService fileService;
-
-    private static final List<String> ALLOWED_IMAGE_TYPES = Arrays.asList(
-            "image/jpeg", "image/jpg", "image/png", "image/heic"
-    );
-
-    private static final List<String> ALLOWED_VIDEO_TYPES = Arrays.asList(
-            "video/quicktime", "video/mp4", "video/mov"
-    );
 
     /**
      * 上传单个文件(图片或视频)
@@ -48,33 +38,22 @@ public class FileController {
             @RequestParam(value = "userId", required = false) Long userId) {
         
         try {
-            // 验证文件
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(ApiResponse.error("File is empty"));
             }
 
-            String contentType = file.getContentType();
-            if (contentType == null) {
-                return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Unknown file type"));
-            }
+            log.info("Uploading file: name={}, contentType={}, size={} bytes",
+                    file.getOriginalFilename(), file.getContentType(), file.getSize());
 
-            // 检查文件类型
-            if (!ALLOWED_IMAGE_TYPES.contains(contentType) && 
-                !ALLOWED_VIDEO_TYPES.contains(contentType)) {
-                return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                        .body(ApiResponse.error("Unsupported file type: " + contentType));
-            }
-
-            log.info("Uploading file: name={}, type={}, size={} bytes", 
-                    file.getOriginalFilename(), contentType, file.getSize());
-
-            // 处理上传
             FileUploadResponse response = fileService.handleFileUpload(file, userId);
-
             return ResponseEntity.ok(ApiResponse.success(response));
-
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
+            HttpStatus status = message.toLowerCase().contains("unsupported")
+                    ? HttpStatus.UNSUPPORTED_MEDIA_TYPE
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(ApiResponse.error(message));
         } catch (Exception e) {
             log.error("File upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -154,9 +133,9 @@ public class FileController {
      * @param response HTTP响应
      */
     @GetMapping("/{id}")
-    public void getFile(@PathVariable Long id, HttpServletResponse response) {
+    public void getFile(@PathVariable Long id, HttpServletRequest request, HttpServletResponse response) {
         try {
-            fileService.streamFile(id, response);
+            fileService.streamFile(id, request, response);
         } catch (Exception e) {
             log.error("Failed to get file: id={}", id, e);
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
