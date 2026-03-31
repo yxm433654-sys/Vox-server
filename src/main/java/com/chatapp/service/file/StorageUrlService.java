@@ -1,4 +1,4 @@
-package com.chatapp.service;
+package com.chatapp.service.file;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

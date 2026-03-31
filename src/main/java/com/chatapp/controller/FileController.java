@@ -2,7 +2,10 @@ package com.chatapp.controller;
 
 import com.chatapp.dto.FileUploadResponse;
 import com.chatapp.dto.ApiResponse;
-import com.chatapp.service.FileService;
+import com.chatapp.service.file.FileDeleteService;
+import com.chatapp.service.file.FileQueryService;
+import com.chatapp.service.file.FileStreamingService;
+import com.chatapp.service.file.FileUploadService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -23,7 +26,10 @@ import jakarta.servlet.http.HttpServletResponse;
 @RequiredArgsConstructor
 public class FileController {
 
-    private final FileService fileService;
+    private final FileUploadService fileUploadService;
+    private final FileStreamingService fileStreamingService;
+    private final FileQueryService fileQueryService;
+    private final FileDeleteService fileDeletionService;
 
     /**
      * 上传单个文件(图片或视频)
@@ -46,7 +52,7 @@ public class FileController {
             log.info("Uploading file: name={}, contentType={}, size={} bytes",
                     file.getOriginalFilename(), file.getContentType(), file.getSize());
 
-            FileUploadResponse response = fileService.handleFileUpload(file, userId);
+            FileUploadResponse response = fileUploadService.uploadFile(file, userId);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
@@ -84,7 +90,7 @@ public class FileController {
             log.info("Uploading Live Photo: jpeg={}, mov={}", 
                     jpeg.getOriginalFilename(), mov.getOriginalFilename());
 
-            FileUploadResponse response = fileService.handleLivePhotoUpload(jpeg, mov, userId);
+            FileUploadResponse response = fileUploadService.uploadLivePhoto(jpeg, mov, userId);
 
             return ResponseEntity.ok(ApiResponse.success(response));
 
@@ -115,7 +121,7 @@ public class FileController {
 
             log.info("Uploading Motion Photo: name={}", file.getOriginalFilename());
 
-            FileUploadResponse response = fileService.handleMotionPhotoUpload(file, userId);
+            FileUploadResponse response = fileUploadService.uploadMotionPhoto(file, userId);
 
             return ResponseEntity.ok(ApiResponse.success(response));
 
@@ -135,7 +141,7 @@ public class FileController {
     @GetMapping("/{id}")
     public void getFile(@PathVariable Long id, HttpServletRequest request, HttpServletResponse response) {
         try {
-            fileService.streamFile(id, request, response);
+            fileStreamingService.streamFile(id, request, response);
         } catch (Exception e) {
             log.error("Failed to get file: id={}", id, e);
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
@@ -151,7 +157,7 @@ public class FileController {
     @GetMapping("/preview/{id}")
     public ResponseEntity<ApiResponse<FileUploadResponse>> getFilePreview(@PathVariable Long id) {
         try {
-            FileUploadResponse fileInfo = fileService.getFileInfo(id);
+            FileUploadResponse fileInfo = fileQueryService.getFileInfo(id);
             return ResponseEntity.ok(ApiResponse.success(fileInfo));
         } catch (Exception e) {
             log.error("Failed to get file preview: id={}", id, e);
@@ -169,7 +175,7 @@ public class FileController {
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteFile(@PathVariable Long id) {
         try {
-            fileService.deleteFile(id);
+            fileDeletionService.deleteFile(id);
             return ResponseEntity.ok(ApiResponse.success(null, "File deleted successfully"));
         } catch (Exception e) {
             log.error("Failed to delete file: id={}", id, e);

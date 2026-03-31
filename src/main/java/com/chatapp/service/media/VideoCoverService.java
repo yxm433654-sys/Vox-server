@@ -1,7 +1,8 @@
-package com.chatapp.service;
+package com.chatapp.service.media;
 
 import com.chatapp.entity.FileResource;
 import com.chatapp.repository.FileResourceRepository;
+import com.chatapp.service.message.MessageRefreshService;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -28,8 +29,9 @@ public class VideoCoverService {
 
     private final MinioClient minioClient;
     private final FileResourceRepository fileResourceRepository;
-    private final FFmpegService ffmpegService;
-    private final MessageService messageService;
+    private final MediaTranscodeService mediaTranscodeService;
+    private final MediaProbeService mediaProbeService;
+    private final MessageRefreshService messageRefreshService;
     private final ObjectProvider<VideoCoverService> selfProvider;
 
     @Value("${minio.bucket}")
@@ -123,8 +125,7 @@ public class VideoCoverService {
             cover.setMimeType("image/jpeg");
             cover.setSourceType("VideoCover");
             FileResource saved = fileResourceRepository.save(cover);
-            messageService.pushMediaRefreshByResourceId(saved.getId());
-
+            messageRefreshService.pushMediaRefreshByResourceId(saved.getId());
         } catch (Exception e) {
             markCoverFailed(cover);
             log.warn("Failed to generate/upload video cover: videoId={}, coverId={}", videoId, coverId, e);
@@ -137,7 +138,7 @@ public class VideoCoverService {
     private void extractCoverWithFallbacks(File tempVideo, File outCover) throws Exception {
         float duration = 0f;
         try {
-            duration = ffmpegService.getVideoDuration(tempVideo);
+            duration = mediaProbeService.getVideoDuration(tempVideo);
         } catch (Exception ignored) {
         }
 
@@ -157,7 +158,7 @@ public class VideoCoverService {
         for (float candidate : candidates) {
             safeDelete(outCover);
             try {
-                ffmpegService.extractCoverFrame(tempVideo, outCover, candidate);
+                mediaTranscodeService.extractCoverFrame(tempVideo, outCover, candidate);
                 if (outCover.exists() && outCover.length() > 0) {
                     return;
                 }
@@ -177,7 +178,7 @@ public class VideoCoverService {
             cover.setSourceType("VideoCoverFailed");
             cover.setFileSize(0L);
             FileResource saved = fileResourceRepository.save(cover);
-            messageService.pushMediaRefreshByResourceId(saved.getId());
+            messageRefreshService.pushMediaRefreshByResourceId(saved.getId());
         } catch (Exception ignored) {
         }
     }
@@ -198,13 +199,12 @@ public class VideoCoverService {
         return dir;
     }
 
-    private static void safeDelete(File f) {
+    private static void safeDelete(File file) {
         try {
-            if (f != null) {
-                f.delete();
+            if (file != null) {
+                file.delete();
             }
         } catch (Exception ignored) {
         }
     }
 }
-

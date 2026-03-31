@@ -1,7 +1,9 @@
 package com.chatapp.controller;
 
 import com.chatapp.dto.*;
-import com.chatapp.service.MessageService;
+import com.chatapp.service.message.MessageCommandService;
+import com.chatapp.service.message.MessageQueryService;
+import com.chatapp.service.message.MessageReadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,12 +19,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MessageController {
 
-    private final MessageService messageService;
+    private final MessageCommandService messageCommandService;
+    private final MessageQueryService messageQueryService;
+    private final MessageReadService messageReadService;
 
     @PostMapping("/send")
     public ResponseEntity<ApiResponse<MessageSendResponse>> send(@Valid @RequestBody MessageSendRequest request) {
         try {
-            MessageSendResponse response = messageService.send(request);
+            MessageSendResponse response = messageCommandService.send(request);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -39,7 +43,7 @@ public class MessageController {
             @RequestParam(value = "lastMessageId", required = false) Long lastMessageId
     ) {
         try {
-            List<MessageDto> messages = messageService.poll(userId, lastMessageId);
+            List<MessageDto> messages = messageQueryService.poll(userId, lastMessageId);
             return ResponseEntity.ok(ApiResponse.success(messages));
         } catch (Exception e) {
             log.error("Poll messages failed", e);
@@ -56,7 +60,7 @@ public class MessageController {
             @RequestParam(value = "size", defaultValue = "50") int size
     ) {
         try {
-            MessageHistoryResponse response = messageService.history(userId, peerId, page, size);
+            MessageHistoryResponse response = messageQueryService.history(userId, peerId, page, size);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -70,7 +74,7 @@ public class MessageController {
     @PutMapping("/read/{id}")
     public ResponseEntity<ApiResponse<Void>> markRead(@PathVariable("id") Long id) {
         try {
-            messageService.markRead(id);
+            messageReadService.markRead(id);
             return ResponseEntity.ok(ApiResponse.success(null, "Message marked as read"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(e.getMessage()));
@@ -87,7 +91,7 @@ public class MessageController {
             @RequestParam("peerId") Long peerId
     ) {
         try {
-            int cleared = messageService.clearConversation(userId, peerId);
+            int cleared = messageCommandService.clearConversation(userId, peerId);
             return ResponseEntity.ok(ApiResponse.success(null, "Cleared " + cleared + " messages"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));

@@ -1,0 +1,98 @@
+package com.chatapp.service.file;
+
+import com.chatapp.entity.FileResource;
+import com.chatapp.repository.FileResourceRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.io.InputStream;
+import java.util.Locale;
+
+@Service
+@RequiredArgsConstructor
+public class FileStreamingService {
+
+    private final FileResourceRepository fileResourceRepository;
+    private final FileStorageService fileStorageService;
+
+    public void streamFile(Long id, HttpServletRequest request, HttpServletResponse response) throws Exception {
+        FileResource resource = fileResourceRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("File not found"));
+
+        String contentType = resource.getMimeType();
+        response.setContentType(contentType == null || contentType.isBlank()
+                ? "application/octet-stream"
+                : contentType);
+        response.setHeader("Accept-Ranges", "bytes");
+
+        long totalSize = fileStorageService.resolveObjectSize(resource);
+        String range = request.getHeader("Range");
+        if (range == null || range.isBlank() || totalSize <= 0) {
+            if (totalSize > 0) {
+                response.setContentLengthLong(totalSize);
+            }
+            try (InputStream stream = fileStorageService.openObject(resource.getStoragePath())) {
+                stream.transferTo(response.getOutputStream());
+            }
+            return;
+        }
+
+        long[] resolved = resolveRange(range, totalSize);
+        long start = resolved[0];
+        long end = resolved[1];
+        if (start < 0 || start >= totalSize || end < start) {
+            response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+            response.setHeader("Content-Range", "bytes */" + totalSize);
+            return;
+        }
+
+        long length = end - start + 1;
+        response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+        response.setHeader("Content-Range", "bytes " + start + "-" + end + "/" + totalSize);
+        response.setContentLengthLong(length);
+
+        try (InputStream stream = fileStorageService.openObjectRange(resource.getStoragePath(), start, length)) {
+            stream.transferTo(response.getOutputStream());
+        }
+    }
+
+    private static long[] resolveRange(String rangeHeader, long totalSize) {
+        String value = rangeHeader.trim().toLowerCase(Locale.ROOT);
+        if (!value.startsWith("bytes=")) {
+            return new long[]{-1, -1};
+        }
+        String spec = value.substring("bytes=".length()).trim();
+        int comma = spec.indexOf(',');
+        if (comma >= 0) {
+            spec = spec.substring(0, comma).trim();
+        }
+        int dash = spec.indexOf('-');
+        if (dash < 0) {
+            return new long[]{-1, -1};
+        }
+        String startStr = spec.substring(0, dash).trim();
+        String endStr = spec.substring(dash + 1).trim();
+
+        try {
+            if (startStr.isEmpty()) {
+                long suffix = Long.parseLong(endStr);
+                if (suffix <= 0) {
+                    return new long[]{-1, -1};
+                }
+                long start = Math.max(0, totalSize - suffix);
+                long end = totalSize - 1;
+                return new long[]{start, end};
+            }
+            long start = Long.parseLong(startStr);
+            long end = endStr.isEmpty() ? (totalSize - 1) : Long.parseLong(endStr);
+            if (end >= totalSize) {
+                end = totalSize - 1;
+            }
+            return new long[]{start, end};
+        } catch (Exception ignored) {
+            return new long[]{-1, -1};
+        }
+    }
+}
