@@ -1,12 +1,8 @@
-﻿# ============================================
-# Spring Boot 搴旂敤閰嶇疆
-# ============================================
-
 spring:
   application:
     name: vox-server
 
-  # 鏁版嵁婧愰厤缃?  datasource:
+  datasource:
     url: jdbc:mysql://127.0.0.1:3306/chatdb?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: chatuser
     password: chatpass
@@ -18,7 +14,6 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
-  # JPA閰嶇疆
   jpa:
     hibernate:
       ddl-auto: validate
@@ -28,7 +23,6 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
 
-  # 鏂囦欢涓婁紶閰嶇疆
   servlet:
     multipart:
       enabled: true
@@ -36,8 +30,7 @@ spring:
       max-request-size: 256MB
       file-size-threshold: 2KB
 
-
-# 鏈嶅姟鍣ㄩ厤缃?server:
+server:
   port: 8080
   servlet:
     context-path: /
@@ -45,31 +38,26 @@ spring:
     enabled: true
     mime-types: application/json,text/html,text/xml,text/plain
 
-# MinIO閰嶇疆
 minio:
   endpoint: http://127.0.0.1:9000
   access-key: minioadmin
   secret-key: minioadmin123
   bucket: chat-app
-  # 棰勭鍚峌RL杩囨湡鏃堕棿(绉?
   presigned-url-expiry: 3600
 
-# FFmpeg閰嶇疆
 ffmpeg:
   path: ffmpeg
   timeout: 300
-  # 杞爜鍙傛暟
   codec:
     video: libx264
     audio: aac
-  # 涓轰簡闄嶄綆杞爜瀵艰嚧鐨勪笂浼?鍙戦€侀樆濉烇紝浣跨敤鏇村揩鐨勭紪鐮侀璁?  preset: veryfast
+  preset: veryfast
   crf: 23
   audio-bitrate: 128k
   pixel-format: yuv420p
 
-# 搴旂敤閰嶇疆
 app:
-  # 鏀寔鐨勬枃浠剁被鍨?  upload:
+  upload:
     allowed-image-types:
       - image/jpeg
       - image/jpg
@@ -79,25 +67,20 @@ app:
       - video/quicktime
       - video/mp4
       - video/mov
-    max-image-size: 20971520  # 20MB
-    max-video-size: 268435456 # 256MB
-  
-  # 涓存椂鏂囦欢鐩綍
+    max-image-size: 20971520
+    max-video-size: 268435456
+
   temp-dir: tmp/chat-uploads
-  
-  # 鍔ㄦ€佸浘鐗囧鐞?  dynamic-photo:
-    # 鏄惁鑷姩杞爜
+
+  dynamic-photo:
     auto-transcode: true
-    # 灏侀潰鎻愬彇鏃堕棿鐐?绉?
     cover-time: 0.5
-    # 淇濈暀鍘熷鏂囦欢
     keep-original: false
 
   jwt:
     secret: dev-secret-change-me-please-set-env
     expiry-seconds: 86400
 
-# 鏃ュ織閰嶇疆
 logging:
   level:
     root: INFO
@@ -113,7 +96,6 @@ logging:
     max-size: 10MB
     max-history: 30
 
-# Actuator鐩戞帶绔偣
 management:
   endpoints:
     web:
@@ -122,4 +104,3 @@ management:
   endpoint:
     health:
       show-details: when-authorized
-
