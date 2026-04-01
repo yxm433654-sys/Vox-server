@@ -1,8 +1,9 @@
 package com.vox.controller;
 
-import com.chatapp.dto.ApiResponse;
-import com.chatapp.dto.UserResponse;
-import com.chatapp.service.UserService;
+import com.vox.application.user.GetUserUseCase;
+import com.vox.controller.common.ApiResponse;
+import com.vox.controller.user.UserResponse;
+import com.vox.controller.user.UserResponseMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -19,12 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class UserController {
 
-    private final UserService userService;
+    private final GetUserUseCase getUserUseCase;
+    private final UserResponseMapper userResponseMapper;
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<UserResponse>> getUser(@PathVariable Long id) {
         try {
-            UserResponse response = userService.getUser(id);
+            UserResponse response = userResponseMapper.toResponse(getUserUseCase.byId(id));
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(e.getMessage()));
@@ -38,7 +40,7 @@ public class UserController {
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<UserResponse>> searchByUsername(@RequestParam("username") String username) {
         try {
-            UserResponse response = userService.getUserByUsername(username);
+            UserResponse response = userResponseMapper.toResponse(getUserUseCase.byUsername(username));
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(e.getMessage()));

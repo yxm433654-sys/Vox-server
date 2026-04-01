@@ -1,11 +1,13 @@
 package com.vox.controller;
 
-import com.chatapp.dto.ApiResponse;
-import com.chatapp.dto.LoginRequest;
-import com.chatapp.dto.LoginResponse;
-import com.chatapp.dto.RegisterRequest;
-import com.chatapp.dto.UserResponse;
-import com.chatapp.service.UserService;
+import com.vox.application.user.LoginUserUseCase;
+import com.vox.application.user.RegisterUserUseCase;
+import com.vox.controller.auth.LoginRequest;
+import com.vox.controller.auth.LoginResponse;
+import com.vox.controller.auth.RegisterRequest;
+import com.vox.controller.common.ApiResponse;
+import com.vox.controller.user.UserResponse;
+import com.vox.controller.user.UserResponseMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,12 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final UserService userService;
+    private final RegisterUserUseCase registerUserUseCase;
+    private final LoginUserUseCase loginUserUseCase;
+    private final UserResponseMapper userResponseMapper;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<UserResponse>> register(@Valid @RequestBody RegisterRequest request) {
         try {
-            UserResponse response = userService.register(request);
+            UserResponse response = userResponseMapper.toResponse(registerUserUseCase.execute(request));
             return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -41,7 +45,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         try {
-            LoginResponse response = userService.login(request.getUsername(), request.getPassword());
+            LoginResponse response = userResponseMapper.toLoginResponse(loginUserUseCase.execute(request));
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));

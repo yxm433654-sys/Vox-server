@@ -1,21 +1,17 @@
 package com.vox.infrastructure.persistence.message;
 
-import com.chatapp.entity.Message;
-import com.chatapp.entity.Session;
-import com.chatapp.repository.MessageRepository;
-import com.chatapp.repository.SessionRepository;
+import com.vox.infrastructure.persistence.entity.Message;
+import com.vox.infrastructure.persistence.entity.Session;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
 @Repository
 @RequiredArgsConstructor
 public class JpaMessageHistoryQueryRepository implements MessageHistoryQueryRepository {
 
-    private final MessageRepository messageRepository;
-    private final SessionRepository sessionRepository;
+    private final MessageLookupRepository messageLookupRepository;
+    private final com.vox.infrastructure.persistence.session.SessionStateRepository sessionStateRepository;
 
     @Override
     public Page<Message> findByPeer(Long userId, Long peerId, int page, int size) {
@@ -25,8 +21,7 @@ public class JpaMessageHistoryQueryRepository implements MessageHistoryQueryRepo
         if (peerId == null) {
             throw new IllegalArgumentException("peerId is required when sessionId is absent");
         }
-        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        return messageRepository.findConversation(userId, peerId, pageable);
+        return messageLookupRepository.findConversation(userId, peerId, page, size);
     }
 
     @Override
@@ -38,7 +33,7 @@ public class JpaMessageHistoryQueryRepository implements MessageHistoryQueryRepo
             throw new IllegalArgumentException("sessionId is required");
         }
 
-        Session session = sessionRepository.findById(sessionId)
+        Session session = sessionStateRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found"));
         if (!session.involves(userId)) {
             throw new IllegalArgumentException("User is not in this session");
@@ -46,3 +41,4 @@ public class JpaMessageHistoryQueryRepository implements MessageHistoryQueryRepo
         return findByPeer(userId, session.peerIdOf(userId), page, size);
     }
 }
+

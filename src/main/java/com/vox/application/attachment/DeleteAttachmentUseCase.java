@@ -13,6 +13,6 @@ public class DeleteAttachmentUseCase {
 
     @Transactional
     public void execute(Long id) throws Exception {
-        attachmentGateway.deleteFile(id);
+        attachmentGateway.deleteAttachment(id);
     }
 }

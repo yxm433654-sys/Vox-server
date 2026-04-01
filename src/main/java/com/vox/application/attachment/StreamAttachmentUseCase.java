@@ -13,6 +13,6 @@ public class StreamAttachmentUseCase {
     private final AttachmentGateway attachmentGateway;
 
     public void execute(Long id, HttpServletRequest request, HttpServletResponse response) throws Exception {
-        attachmentGateway.streamFile(id, request, response);
+        attachmentGateway.streamAttachment(id, request, response);
     }
 }

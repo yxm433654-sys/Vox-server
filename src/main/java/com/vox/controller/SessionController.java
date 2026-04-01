@@ -1,7 +1,7 @@
 package com.vox.controller;
 
-import com.chatapp.dto.ApiResponse;
 import com.vox.application.session.ListSessionsUseCase;
+import com.vox.controller.common.ApiResponse;
 import com.vox.controller.session.SessionResponse;
 import com.vox.controller.session.SessionResponseMapper;
 import lombok.RequiredArgsConstructor;

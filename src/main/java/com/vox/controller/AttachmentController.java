@@ -1,11 +1,13 @@
 package com.vox.controller;
 
-import com.chatapp.dto.ApiResponse;
-import com.chatapp.dto.FileUploadResponse;
 import com.vox.application.attachment.DeleteAttachmentUseCase;
 import com.vox.application.attachment.GetAttachmentInfoUseCase;
 import com.vox.application.attachment.StreamAttachmentUseCase;
 import com.vox.application.attachment.UploadAttachmentUseCase;
+import com.vox.controller.attachment.AttachmentResponse;
+import com.vox.controller.attachment.AttachmentResponseMapper;
+import com.vox.controller.common.ApiResponse;
+import com.vox.domain.attachment.AttachmentSummary;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +34,10 @@ public class AttachmentController {
     private final GetAttachmentInfoUseCase getAttachmentInfoUseCase;
     private final DeleteAttachmentUseCase deleteAttachmentUseCase;
     private final StreamAttachmentUseCase streamAttachmentUseCase;
+    private final AttachmentResponseMapper attachmentResponseMapper;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadFile(
+    public ResponseEntity<ApiResponse<AttachmentResponse>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "userId", required = false) Long userId
     ) {
@@ -42,8 +45,8 @@ public class AttachmentController {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(ApiResponse.error("File is empty"));
             }
-            FileUploadResponse response = uploadAttachmentUseCase.uploadFile(file, userId);
-            return ResponseEntity.ok(ApiResponse.success(response));
+            AttachmentSummary summary = uploadAttachmentUseCase.uploadFile(file, userId);
+            return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
         } catch (IllegalArgumentException e) {
             String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
             HttpStatus status = message.toLowerCase().contains("unsupported")
@@ -58,7 +61,7 @@ public class AttachmentController {
     }
 
     @PostMapping(value = "/upload/live-photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadLivePhoto(
+    public ResponseEntity<ApiResponse<AttachmentResponse>> uploadLivePhoto(
             @RequestParam("jpeg") MultipartFile jpeg,
             @RequestParam("mov") MultipartFile mov,
             @RequestParam(value = "userId", required = false) Long userId
@@ -68,8 +71,8 @@ public class AttachmentController {
                 return ResponseEntity.badRequest()
                         .body(ApiResponse.error("Both JPEG and MOV files are required"));
             }
-            FileUploadResponse response = uploadAttachmentUseCase.uploadLivePhoto(jpeg, mov, userId);
-            return ResponseEntity.ok(ApiResponse.success(response));
+            AttachmentSummary summary = uploadAttachmentUseCase.uploadLivePhoto(jpeg, mov, userId);
+            return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
         } catch (Exception e) {
             log.error("Live photo upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -78,7 +81,7 @@ public class AttachmentController {
     }
 
     @PostMapping(value = "/upload/motion-photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadMotionPhoto(
+    public ResponseEntity<ApiResponse<AttachmentResponse>> uploadMotionPhoto(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "userId", required = false) Long userId
     ) {
@@ -86,8 +89,8 @@ public class AttachmentController {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(ApiResponse.error("File is empty"));
             }
-            FileUploadResponse response = uploadAttachmentUseCase.uploadMotionPhoto(file, userId);
-            return ResponseEntity.ok(ApiResponse.success(response));
+            AttachmentSummary summary = uploadAttachmentUseCase.uploadMotionPhoto(file, userId);
+            return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
         } catch (Exception e) {
             log.error("Motion photo upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -106,10 +109,10 @@ public class AttachmentController {
     }
 
     @GetMapping("/preview/{id}")
-    public ResponseEntity<ApiResponse<FileUploadResponse>> getAttachmentPreview(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<AttachmentResponse>> getAttachmentPreview(@PathVariable Long id) {
         try {
-            FileUploadResponse fileInfo = getAttachmentInfoUseCase.execute(id);
-            return ResponseEntity.ok(ApiResponse.success(fileInfo));
+            AttachmentSummary fileInfo = getAttachmentInfoUseCase.execute(id);
+            return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(fileInfo)));
         } catch (Exception e) {
             log.error("Failed to get attachment preview: id={}", id, e);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)

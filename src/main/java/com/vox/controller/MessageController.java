@@ -1,15 +1,16 @@
 package com.vox.controller;
 
-import com.chatapp.dto.ApiResponse;
-import com.chatapp.dto.MessageDto;
-import com.chatapp.dto.MessageHistoryResponse;
-import com.chatapp.dto.MessageSendRequest;
-import com.chatapp.dto.MessageSendResponse;
 import com.vox.application.message.ClearConversationUseCase;
 import com.vox.application.message.ListMessageHistoryUseCase;
 import com.vox.application.message.MarkMessageReadUseCase;
 import com.vox.application.message.PollMessagesUseCase;
 import com.vox.application.message.SendMessageUseCase;
+import com.vox.controller.common.ApiResponse;
+import com.vox.controller.message.MessageHistoryResponse;
+import com.vox.controller.message.MessageResponse;
+import com.vox.controller.message.MessageResponseMapper;
+import com.vox.controller.message.SendMessageRequest;
+import com.vox.controller.message.SendMessageResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,11 +39,14 @@ public class MessageController {
     private final SendMessageUseCase sendMessageUseCase;
     private final MarkMessageReadUseCase markMessageReadUseCase;
     private final ClearConversationUseCase clearConversationUseCase;
+    private final MessageResponseMapper messageResponseMapper;
 
     @PostMapping("/send")
-    public ResponseEntity<ApiResponse<MessageSendResponse>> send(@Valid @RequestBody MessageSendRequest request) {
+    public ResponseEntity<ApiResponse<SendMessageResponse>> send(@Valid @RequestBody SendMessageRequest request) {
         try {
-            MessageSendResponse response = sendMessageUseCase.execute(request);
+            SendMessageResponse response = messageResponseMapper.toSendResponse(
+                    sendMessageUseCase.execute(messageResponseMapper.toCommand(request))
+            );
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -54,12 +58,14 @@ public class MessageController {
     }
 
     @GetMapping("/poll")
-    public ResponseEntity<ApiResponse<List<MessageDto>>> poll(
+    public ResponseEntity<ApiResponse<List<MessageResponse>>> poll(
             @RequestParam("userId") Long userId,
             @RequestParam(value = "lastMessageId", required = false) Long lastMessageId
     ) {
         try {
-            List<MessageDto> messages = pollMessagesUseCase.execute(userId, lastMessageId);
+            List<MessageResponse> messages = messageResponseMapper.toResponses(
+                    pollMessagesUseCase.execute(userId, lastMessageId)
+            );
             return ResponseEntity.ok(ApiResponse.success(messages));
         } catch (Exception e) {
             log.error("Poll messages failed", e);
@@ -77,9 +83,11 @@ public class MessageController {
             @RequestParam(value = "size", defaultValue = "50") int size
     ) {
         try {
-            MessageHistoryResponse response = sessionId != null
-                    ? listMessageHistoryUseCase.bySession(userId, sessionId, page, size)
-                    : listMessageHistoryUseCase.byPeer(userId, peerId, page, size);
+            MessageHistoryResponse response = messageResponseMapper.toHistoryResponse(
+                    sessionId != null
+                            ? listMessageHistoryUseCase.bySession(userId, sessionId, page, size)
+                            : listMessageHistoryUseCase.byPeer(userId, peerId, page, size)
+            );
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));

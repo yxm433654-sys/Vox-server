@@ -1,6 +1,6 @@
 package com.vox.application.attachment;
 
-import com.chatapp.dto.FileUploadResponse;
+import com.vox.domain.attachment.AttachmentSummary;
 import com.vox.infrastructure.storage.AttachmentGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,17 +14,17 @@ public class UploadAttachmentUseCase {
     private final AttachmentGateway attachmentGateway;
 
     @Transactional
-    public FileUploadResponse uploadFile(MultipartFile file, Long userId) throws Exception {
+    public AttachmentSummary uploadFile(MultipartFile file, Long userId) throws Exception {
         return attachmentGateway.uploadFile(file, userId);
     }
 
     @Transactional
-    public FileUploadResponse uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception {
+    public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception {
         return attachmentGateway.uploadLivePhoto(jpeg, mov, userId);
     }
 
     @Transactional
-    public FileUploadResponse uploadMotionPhoto(MultipartFile file, Long userId) throws Exception {
+    public AttachmentSummary uploadMotionPhoto(MultipartFile file, Long userId) throws Exception {
         return attachmentGateway.uploadMotionPhoto(file, userId);
     }
 }

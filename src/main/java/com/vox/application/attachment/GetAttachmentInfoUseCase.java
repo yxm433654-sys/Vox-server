@@ -1,6 +1,6 @@
 package com.vox.application.attachment;
 
-import com.chatapp.dto.FileUploadResponse;
+import com.vox.domain.attachment.AttachmentSummary;
 import com.vox.infrastructure.storage.AttachmentGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,7 +13,7 @@ public class GetAttachmentInfoUseCase {
     private final AttachmentGateway attachmentGateway;
 
     @Transactional(readOnly = true)
-    public FileUploadResponse execute(Long id) {
-        return attachmentGateway.getFileInfo(id);
+    public AttachmentSummary execute(Long id) {
+        return attachmentGateway.getAttachmentInfo(id);
     }
 }

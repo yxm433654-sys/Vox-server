@@ -1,11 +1,9 @@
 package com.vox.infrastructure.persistence.session;
 
-import com.chatapp.entity.Message;
-import com.chatapp.entity.Session;
-import com.chatapp.entity.User;
-import com.chatapp.repository.MessageRepository;
-import com.chatapp.repository.SessionRepository;
-import com.chatapp.repository.UserRepository;
+import com.vox.infrastructure.persistence.entity.Message;
+import com.vox.infrastructure.persistence.entity.Session;
+import com.vox.infrastructure.persistence.entity.User;
+import com.vox.application.session.SessionPreviewBuilder;
 import com.vox.domain.session.SessionSummary;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -22,13 +20,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class JpaSessionSummaryQueryRepository implements SessionSummaryQueryRepository {
 
-    private final SessionRepository sessionRepository;
-    private final UserRepository userRepository;
-    private final MessageRepository messageRepository;
+    private final SessionStateRepository sessionStateRepository;
+    private final com.vox.infrastructure.persistence.user.UserProfileRepository userProfileRepository;
+    private final com.vox.infrastructure.persistence.message.MessageLookupRepository messageLookupRepository;
+    private final SessionPreviewBuilder sessionPreviewBuilder;
 
     @Override
     public List<SessionSummary> listByUserId(Long userId) {
-        List<Session> sessions = sessionRepository.findByUserIdOrderByRecent(userId);
+        List<Session> sessions = sessionStateRepository.findRecentByUserId(userId);
         if (sessions.isEmpty()) {
             return List.of();
         }
@@ -36,14 +35,14 @@ public class JpaSessionSummaryQueryRepository implements SessionSummaryQueryRepo
         Set<Long> peerIds = sessions.stream()
                 .map(session -> session.peerIdOf(userId))
                 .collect(Collectors.toSet());
-        Map<Long, User> usersById = userRepository.findAllById(peerIds).stream()
+        Map<Long, User> usersById = userProfileRepository.findAllByIds(peerIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
         Set<Long> lastMessageIds = sessions.stream()
                 .map(Session::getLastMessageId)
                 .filter(id -> id != null && id > 0)
                 .collect(Collectors.toSet());
-        Map<Long, Message> messagesById = messageRepository.findAllById(lastMessageIds).stream()
+        Map<Long, Message> messagesById = messageLookupRepository.findAllByIds(lastMessageIds).stream()
                 .collect(Collectors.toMap(Message::getId, Function.identity()));
 
         return sessions.stream()
@@ -73,7 +72,7 @@ public class JpaSessionSummaryQueryRepository implements SessionSummaryQueryRepo
                 .peerAvatarUrl(peer == null ? null : peer.getAvatarUrl())
                 .lastMessageId(session.getLastMessageId())
                 .lastMessageType(lastMessage == null ? null : lastMessage.getType().name())
-                .lastMessagePreview(buildPreview(lastMessage))
+                .lastMessagePreview(sessionPreviewBuilder.build(lastMessage))
                 .unreadCount(session.unreadCountFor(currentUserId))
                 .updatedAt(resolveUpdatedAt(session))
                 .build();
@@ -82,17 +81,5 @@ public class JpaSessionSummaryQueryRepository implements SessionSummaryQueryRepo
     private LocalDateTime resolveUpdatedAt(Session session) {
         return session.getLastMessageTime() != null ? session.getLastMessageTime() : session.getUpdateTime();
     }
-
-    private String buildPreview(Message message) {
-        if (message == null) {
-            return "";
-        }
-        return switch (message.getType()) {
-            case TEXT -> message.getContent() == null ? "" : message.getContent();
-            case IMAGE -> "[图片]";
-            case VIDEO -> "[视频]";
-            case DYNAMIC_PHOTO -> "[动态图片]";
-            case FILE -> "[文件]";
-        };
-    }
 }
+

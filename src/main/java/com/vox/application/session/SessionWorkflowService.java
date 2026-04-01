@@ -1,13 +1,13 @@
 package com.vox.application.session;
 
-import com.chatapp.entity.Message;
-import com.chatapp.entity.Session;
-import com.chatapp.entity.User;
-import com.chatapp.repository.MessageRepository;
-import com.chatapp.repository.SessionRepository;
-import com.chatapp.repository.UserRepository;
+import com.vox.infrastructure.persistence.entity.Message;
+import com.vox.infrastructure.persistence.entity.Session;
+import com.vox.infrastructure.persistence.entity.User;
 import com.vox.controller.session.SessionResponse;
 import com.vox.controller.session.SessionResponseMapper;
+import com.vox.infrastructure.persistence.message.MessageLookupRepository;
+import com.vox.infrastructure.persistence.session.SessionStateRepository;
+import com.vox.infrastructure.persistence.user.UserProfileRepository;
 import com.vox.infrastructure.realtime.RealtimePushGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,11 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SessionWorkflowService {
 
-    private final SessionRepository sessionRepository;
-    private final MessageRepository messageRepository;
-    private final UserRepository userRepository;
+    private final SessionStateRepository sessionStateRepository;
+    private final MessageLookupRepository messageLookupRepository;
+    private final UserProfileRepository userProfileRepository;
     private final RealtimePushGateway realtimePushGateway;
     private final SessionResponseMapper sessionResponseMapper;
+    private final SessionPreviewBuilder sessionPreviewBuilder;
 
     @Transactional
     public Session updateAfterMessage(Message message) {
@@ -29,7 +30,7 @@ public class SessionWorkflowService {
         session.setLastMessageId(message.getId());
         session.setLastMessageTime(message.getCreateTime());
         session.incrementUnreadFor(message.getReceiverId());
-        Session saved = sessionRepository.save(session);
+        Session saved = sessionStateRepository.save(session);
         pushSessionRefresh(saved, message.getSenderId(), message.getReceiverId());
         return saved;
     }
@@ -41,7 +42,7 @@ public class SessionWorkflowService {
             return;
         }
         session.clearUnreadFor(currentUserId);
-        Session saved = sessionRepository.save(session);
+        Session saved = sessionStateRepository.save(session);
         pushSessionRefresh(saved, currentUserId, peerId);
     }
 
@@ -55,7 +56,7 @@ public class SessionWorkflowService {
         session.setLastMessageTime(null);
         session.clearUnreadFor(userId);
         session.clearUnreadFor(peerId);
-        sessionRepository.delete(session);
+        sessionStateRepository.delete(session);
         realtimePushGateway.pushSessionListChanged(userId);
         realtimePushGateway.pushSessionListChanged(peerId);
     }
@@ -71,14 +72,14 @@ public class SessionWorkflowService {
 
         Long first = Math.min(userId, peerId);
         Long second = Math.max(userId, peerId);
-        return sessionRepository.findByUser1IdAndUser2Id(first, second)
+        return sessionStateRepository.findBetweenUsers(first, second)
                 .orElseGet(() -> {
                     Session session = new Session();
                     session.setUser1Id(first);
                     session.setUser2Id(second);
                     session.setUnreadCountUser1(0);
                     session.setUnreadCountUser2(0);
-                    return sessionRepository.save(session);
+                    return sessionStateRepository.save(session);
                 });
     }
 
@@ -89,7 +90,7 @@ public class SessionWorkflowService {
         }
         Long first = Math.min(userId, peerId);
         Long second = Math.max(userId, peerId);
-        return sessionRepository.findByUser1IdAndUser2Id(first, second);
+        return sessionStateRepository.findBetweenUsers(first, second);
     }
 
     private void pushSessionRefresh(Session session, Long firstUserId, Long secondUserId) {
@@ -106,10 +107,10 @@ public class SessionWorkflowService {
         }
 
         Long peerId = session.peerIdOf(userId);
-        User peer = userRepository.findById(peerId).orElse(null);
+        User peer = userProfileRepository.findById(peerId).orElse(null);
         Message lastMessage = session.getLastMessageId() == null
                 ? null
-                : messageRepository.findById(session.getLastMessageId()).orElse(null);
+                : messageLookupRepository.findById(session.getLastMessageId()).orElse(null);
 
         SessionResponse response = sessionResponseMapper.toResponse(
                 com.vox.domain.session.SessionSummary.builder()
@@ -119,24 +120,12 @@ public class SessionWorkflowService {
                         .peerAvatarUrl(peer == null ? null : peer.getAvatarUrl())
                         .lastMessageId(session.getLastMessageId())
                         .lastMessageType(lastMessage == null ? null : lastMessage.getType().name())
-                        .lastMessagePreview(buildPreview(lastMessage))
+                        .lastMessagePreview(sessionPreviewBuilder.build(lastMessage))
                         .unreadCount(session.unreadCountFor(userId))
                         .updatedAt(session.getLastMessageTime() != null ? session.getLastMessageTime() : session.getUpdateTime())
                         .build()
         );
         realtimePushGateway.pushSessionUpdated(userId, response);
     }
-
-    private String buildPreview(Message message) {
-        if (message == null) {
-            return "";
-        }
-        return switch (message.getType()) {
-            case TEXT -> message.getContent() == null ? "" : message.getContent();
-            case IMAGE -> "[图片]";
-            case VIDEO -> "[视频]";
-            case DYNAMIC_PHOTO -> "[动态图片]";
-            case FILE -> "[文件]";
-        };
-    }
 }
+

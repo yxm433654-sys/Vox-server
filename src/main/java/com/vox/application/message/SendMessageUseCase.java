@@ -1,12 +1,8 @@
 package com.vox.application.message;
 
-import com.chatapp.dto.MessageDto;
-import com.chatapp.dto.MessageSendRequest;
-import com.chatapp.dto.MessageSendResponse;
-import com.chatapp.entity.Message;
-import com.chatapp.repository.MessageRepository;
-import com.chatapp.service.message.MessageDtoAssembler;
+import com.vox.infrastructure.persistence.entity.Message;
 import com.vox.application.session.SessionWorkflowService;
+import com.vox.infrastructure.persistence.message.MessageCommandRepository;
 import com.vox.infrastructure.realtime.RealtimePushGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,13 +14,13 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class SendMessageUseCase {
 
-    private final MessageRepository messageRepository;
-    private final MessageDtoAssembler messageDtoAssembler;
+    private final MessageCommandRepository messageCommandRepository;
+    private final MessageViewAssembler messageViewAssembler;
     private final RealtimePushGateway realtimePushGateway;
     private final SessionWorkflowService sessionWorkflowService;
 
     @Transactional
-    public MessageSendResponse execute(MessageSendRequest request) {
+    public SendMessageResult execute(SendMessageCommand request) {
         Message.MessageType type = parseType(request.getType());
         validateRequest(request, type);
 
@@ -37,12 +33,12 @@ public class SendMessageUseCase {
         message.setVideoResourceId(request.getVideoResourceId());
         message.setStatus("SENT");
 
-        Message saved = messageRepository.save(message);
+        Message saved = messageCommandRepository.save(message);
         sessionWorkflowService.updateAfterMessage(saved);
-        MessageDto dto = messageDtoAssembler.toDto(saved);
-        realtimePushGateway.pushNewMessage(saved.getReceiverId(), dto);
+        MessageView messageView = messageViewAssembler.toView(saved);
+        realtimePushGateway.pushNewMessage(saved.getReceiverId(), messageView);
 
-        MessageSendResponse response = new MessageSendResponse();
+        SendMessageResult response = new SendMessageResult();
         response.setMessageId(saved.getId());
         response.setStatus(saved.getStatus());
         response.setCreatedAt(saved.getCreateTime());
@@ -57,7 +53,7 @@ public class SendMessageUseCase {
         }
     }
 
-    private void validateRequest(MessageSendRequest request, Message.MessageType type) {
+    private void validateRequest(SendMessageCommand request, Message.MessageType type) {
         if (request.getSenderId() == null || request.getReceiverId() == null) {
             throw new IllegalArgumentException("senderId and receiverId are required");
         }
@@ -70,3 +66,4 @@ public class SendMessageUseCase {
         }
     }
 }
+

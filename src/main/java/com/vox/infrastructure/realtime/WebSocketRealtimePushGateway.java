@@ -1,6 +1,5 @@
 package com.vox.infrastructure.realtime;
 
-import com.chatapp.websocket.WebSocketPushService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
