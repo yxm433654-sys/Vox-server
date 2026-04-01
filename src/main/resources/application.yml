@@ -1,13 +1,12 @@
-# ============================================
-# Spring Boot 应用配置
+﻿# ============================================
+# Spring Boot 搴旂敤閰嶇疆
 # ============================================
 
 spring:
   application:
     name: vox-server
 
-  # 数据源配置
-  datasource:
+  # 鏁版嵁婧愰厤缃?  datasource:
     url: jdbc:mysql://127.0.0.1:3306/chatdb?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: chatuser
     password: chatpass
@@ -19,7 +18,7 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
-  # JPA配置
+  # JPA閰嶇疆
   jpa:
     hibernate:
       ddl-auto: validate
@@ -29,17 +28,16 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
 
-  # 文件上传配置
+  # 鏂囦欢涓婁紶閰嶇疆
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 256MB
+      max-request-size: 256MB
       file-size-threshold: 2KB
 
 
-# 服务器配置
-server:
+# 鏈嶅姟鍣ㄩ厤缃?server:
   port: 8080
   servlet:
     context-path: /
@@ -47,33 +45,31 @@ server:
     enabled: true
     mime-types: application/json,text/html,text/xml,text/plain
 
-# MinIO配置
+# MinIO閰嶇疆
 minio:
   endpoint: http://127.0.0.1:9000
   access-key: minioadmin
   secret-key: minioadmin123
   bucket: chat-app
-  # 预签名URL过期时间(秒)
+  # 棰勭鍚峌RL杩囨湡鏃堕棿(绉?
   presigned-url-expiry: 3600
 
-# FFmpeg配置
+# FFmpeg閰嶇疆
 ffmpeg:
   path: ffmpeg
   timeout: 300
-  # 转码参数
+  # 杞爜鍙傛暟
   codec:
     video: libx264
     audio: aac
-  # 为了降低转码导致的上传/发送阻塞，使用更快的编码预设
-  preset: veryfast
+  # 涓轰簡闄嶄綆杞爜瀵艰嚧鐨勪笂浼?鍙戦€侀樆濉烇紝浣跨敤鏇村揩鐨勭紪鐮侀璁?  preset: veryfast
   crf: 23
   audio-bitrate: 128k
   pixel-format: yuv420p
 
-# 应用配置
+# 搴旂敤閰嶇疆
 app:
-  # 支持的文件类型
-  upload:
+  # 鏀寔鐨勬枃浠剁被鍨?  upload:
     allowed-image-types:
       - image/jpeg
       - image/jpg
@@ -84,25 +80,24 @@ app:
       - video/mp4
       - video/mov
     max-image-size: 20971520  # 20MB
-    max-video-size: 104857600 # 100MB
+    max-video-size: 268435456 # 256MB
   
-  # 临时文件目录
+  # 涓存椂鏂囦欢鐩綍
   temp-dir: tmp/chat-uploads
   
-  # 动态图片处理
-  dynamic-photo:
-    # 是否自动转码
+  # 鍔ㄦ€佸浘鐗囧鐞?  dynamic-photo:
+    # 鏄惁鑷姩杞爜
     auto-transcode: true
-    # 封面提取时间点(秒)
+    # 灏侀潰鎻愬彇鏃堕棿鐐?绉?
     cover-time: 0.5
-    # 保留原始文件
+    # 淇濈暀鍘熷鏂囦欢
     keep-original: false
 
   jwt:
     secret: dev-secret-change-me-please-set-env
     expiry-seconds: 86400
 
-# 日志配置
+# 鏃ュ織閰嶇疆
 logging:
   level:
     root: INFO
@@ -118,7 +113,7 @@ logging:
     max-size: 10MB
     max-history: 30
 
-# Actuator监控端点
+# Actuator鐩戞帶绔偣
 management:
   endpoints:
     web:
@@ -127,3 +122,4 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+

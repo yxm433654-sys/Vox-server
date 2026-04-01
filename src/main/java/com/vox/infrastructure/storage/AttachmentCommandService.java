@@ -1,18 +1,19 @@
 package com.vox.infrastructure.storage;
 
-import com.vox.infrastructure.persistence.entity.FileResource;
-import com.vox.infrastructure.persistence.repository.FileResourceRepository;
-import com.vox.infrastructure.storage.FileStorageService;
-import com.vox.infrastructure.media.MediaProbeService;
-import com.vox.infrastructure.media.MediaSourceTypes;
 import com.vox.domain.attachment.AttachmentSummary;
 import com.vox.infrastructure.media.DynamicPhotoProcessingService;
+import com.vox.infrastructure.media.MediaProbeService;
+import com.vox.infrastructure.media.MediaSourceTypes;
 import com.vox.infrastructure.media.VideoCoverWorkflowService;
+import com.vox.infrastructure.persistence.entity.FileResource;
+import com.vox.infrastructure.persistence.repository.FileResourceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -67,6 +68,9 @@ public class AttachmentCommandService {
             resource.setFileSize(file.getSize());
             resource.setUploaderId(userId);
 
+            if (resource.getFileType() == FileResource.FileType.IMAGE) {
+                fillImageMetadata(resource, tempFile);
+            }
             if (resource.getFileType() == FileResource.FileType.VIDEO) {
                 fillVideoMetadata(resource, tempFile);
             }
@@ -142,6 +146,22 @@ public class AttachmentCommandService {
                 savedVideo.getId()
         );
         return attachmentSummaryMapper.toDynamicPhotoSummary(savedCover, savedVideo);
+    }
+
+    private void fillImageMetadata(FileResource resource, File tempFile) {
+        try {
+            BufferedImage image = ImageIO.read(tempFile);
+            if (image == null) {
+                return;
+            }
+            if (image.getWidth() > 0) {
+                resource.setWidth(image.getWidth());
+            }
+            if (image.getHeight() > 0) {
+                resource.setHeight(image.getHeight());
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void fillVideoMetadata(FileResource resource, File tempFile) {
@@ -326,4 +346,3 @@ public class AttachmentCommandService {
                 || "msf1".equals(brand);
     }
 }
-
