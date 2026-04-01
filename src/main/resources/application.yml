@@ -4,7 +4,7 @@
 
 spring:
   application:
-    name: dynamic-photo-chat
+    name: vox-server
 
   # 数据源配置
   datasource:
@@ -106,7 +106,8 @@ app:
 logging:
   level:
     root: INFO
-    com.chatapp: DEBUG
+    com.vox: DEBUG
+    com.chatapp: INFO
     org.springframework.web: INFO
     org.hibernate.SQL: INFO
   pattern:

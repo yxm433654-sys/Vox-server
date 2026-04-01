@@ -19,6 +19,14 @@ public class WebSocketPushService {
         sessionManager.get(userId).ifPresent(session -> send(session, Map.of("type", "NEW_MESSAGE", "data", data)));
     }
 
+    public void pushSessionUpdated(Long userId, Object data) {
+        sessionManager.get(userId).ifPresent(session -> send(session, Map.of("type", "SESSION_UPDATED", "data", data)));
+    }
+
+    public void pushSessionListChanged(Long userId) {
+        sessionManager.get(userId).ifPresent(session -> send(session, Map.of("type", "SESSION_LIST_CHANGED")));
+    }
+
     private void send(WebSocketSession session, Object payload) {
         try {
             if (!session.isOpen()) {

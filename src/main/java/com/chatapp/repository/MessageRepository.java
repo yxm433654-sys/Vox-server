@@ -16,6 +16,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     List<Message> findByReceiverIdAndIdGreaterThanOrderByIdAsc(Long receiverId, Long id);
 
+    List<Message> findByReceiverIdAndStatusNotOrderByIdAsc(Long receiverId, String status);
+
     @Query("""
             select m from Message m
             where (m.senderId = :userId and m.receiverId = :peerId)

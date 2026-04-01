@@ -12,12 +12,12 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.chatapp</groupId>
-    <artifactId>dynamic-photo-chat</artifactId>
+    <groupId>com.vox</groupId>
+    <artifactId>vox-server</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Dynamic Photo Chat</name>
+    <name>Vox Server</name>
     <description>跨平台动态图片兼容即时通信系统</description>
 
     <properties>

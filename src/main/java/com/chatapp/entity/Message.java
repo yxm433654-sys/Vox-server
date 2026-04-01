@@ -50,6 +50,7 @@ public class Message {
         TEXT,
         IMAGE,
         VIDEO,
-        DYNAMIC_PHOTO
+        DYNAMIC_PHOTO,
+        FILE
     }
 }

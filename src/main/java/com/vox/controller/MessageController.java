@@ -1,15 +1,29 @@
-package com.chatapp.controller;
+package com.vox.controller;
 
-import com.chatapp.dto.*;
-import com.chatapp.service.message.MessageCommandService;
-import com.chatapp.service.message.MessageQueryService;
-import com.chatapp.service.message.MessageReadService;
+import com.chatapp.dto.ApiResponse;
+import com.chatapp.dto.MessageDto;
+import com.chatapp.dto.MessageHistoryResponse;
+import com.chatapp.dto.MessageSendRequest;
+import com.chatapp.dto.MessageSendResponse;
+import com.vox.application.message.ClearConversationUseCase;
+import com.vox.application.message.ListMessageHistoryUseCase;
+import com.vox.application.message.MarkMessageReadUseCase;
+import com.vox.application.message.PollMessagesUseCase;
+import com.vox.application.message.SendMessageUseCase;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -19,14 +33,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MessageController {
 
-    private final MessageCommandService messageCommandService;
-    private final MessageQueryService messageQueryService;
-    private final MessageReadService messageReadService;
+    private final ListMessageHistoryUseCase listMessageHistoryUseCase;
+    private final PollMessagesUseCase pollMessagesUseCase;
+    private final SendMessageUseCase sendMessageUseCase;
+    private final MarkMessageReadUseCase markMessageReadUseCase;
+    private final ClearConversationUseCase clearConversationUseCase;
 
     @PostMapping("/send")
     public ResponseEntity<ApiResponse<MessageSendResponse>> send(@Valid @RequestBody MessageSendRequest request) {
         try {
-            MessageSendResponse response = messageCommandService.send(request);
+            MessageSendResponse response = sendMessageUseCase.execute(request);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -43,7 +59,7 @@ public class MessageController {
             @RequestParam(value = "lastMessageId", required = false) Long lastMessageId
     ) {
         try {
-            List<MessageDto> messages = messageQueryService.poll(userId, lastMessageId);
+            List<MessageDto> messages = pollMessagesUseCase.execute(userId, lastMessageId);
             return ResponseEntity.ok(ApiResponse.success(messages));
         } catch (Exception e) {
             log.error("Poll messages failed", e);
@@ -55,12 +71,15 @@ public class MessageController {
     @GetMapping("/history")
     public ResponseEntity<ApiResponse<MessageHistoryResponse>> history(
             @RequestParam("userId") Long userId,
-            @RequestParam("peerId") Long peerId,
+            @RequestParam(value = "peerId", required = false) Long peerId,
+            @RequestParam(value = "sessionId", required = false) Long sessionId,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "50") int size
     ) {
         try {
-            MessageHistoryResponse response = messageQueryService.history(userId, peerId, page, size);
+            MessageHistoryResponse response = sessionId != null
+                    ? listMessageHistoryUseCase.bySession(userId, sessionId, page, size)
+                    : listMessageHistoryUseCase.byPeer(userId, peerId, page, size);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
@@ -74,7 +93,7 @@ public class MessageController {
     @PutMapping("/read/{id}")
     public ResponseEntity<ApiResponse<Void>> markRead(@PathVariable("id") Long id) {
         try {
-            messageReadService.markRead(id);
+            markMessageReadUseCase.execute(id);
             return ResponseEntity.ok(ApiResponse.success(null, "Message marked as read"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(e.getMessage()));
@@ -91,7 +110,7 @@ public class MessageController {
             @RequestParam("peerId") Long peerId
     ) {
         try {
-            int cleared = messageCommandService.clearConversation(userId, peerId);
+            int cleared = clearConversationUseCase.execute(userId, peerId);
             return ResponseEntity.ok(ApiResponse.success(null, "Cleared " + cleared + " messages"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
