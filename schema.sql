@@ -1,88 +1,85 @@
--- ============================================
--- 跨平台动态图片兼容系统 - 数据库设计
--- ============================================
-
--- 创建数据库
-CREATE DATABASE IF NOT EXISTS chatdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+﻿DROP DATABASE IF EXISTS chatdb;
+CREATE DATABASE chatdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE chatdb;
 
--- 用户表
 CREATE TABLE user (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
-    username VARCHAR(64) NOT NULL UNIQUE COMMENT '用户名',
-    password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希',
-    avatar_url VARCHAR(255) COMMENT '头像URL',
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    status TINYINT DEFAULT 1 COMMENT '状态: 1-正常 0-禁用',
-    INDEX idx_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'User ID',
+    username VARCHAR(64) NOT NULL COMMENT 'Username',
+    password_hash VARCHAR(255) NOT NULL COMMENT 'Password hash',
+    avatar_url VARCHAR(255) NULL COMMENT 'Avatar URL',
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT 'Status: 1 active, 0 disabled',
+    CONSTRAINT uk_user_username UNIQUE (username),
+    INDEX idx_user_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User table';
 
--- 文件资源表
 CREATE TABLE file_resource (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '文件ID',
-    original_name VARCHAR(255) COMMENT '原始文件名',
-    storage_path VARCHAR(512) NOT NULL COMMENT 'MinIO存储路径',
-    file_type ENUM('IMAGE', 'VIDEO', 'DYNAMIC_COVER', 'DYNAMIC_VIDEO') NOT NULL COMMENT '文件类型',
-    source_type VARCHAR(32) COMMENT '来源类型: iOS_LivePhoto, Android_MotionPhoto, Normal',
-    mime_type VARCHAR(64) COMMENT 'MIME类型',
-    file_size BIGINT COMMENT '文件大小(字节)',
-    width INT COMMENT '图片/视频宽度',
-    height INT COMMENT '图片/视频高度',
-    duration FLOAT COMMENT '视频时长(秒)',
-    cover_time FLOAT COMMENT 'Live Photo封面时间点',
-    related_file_id BIGINT COMMENT '关联文件ID(封面对应视频,视频对应封面)',
-    metadata_json TEXT COMMENT '额外元数据JSON',
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    uploader_id BIGINT COMMENT '上传者ID',
-    INDEX idx_storage_path (storage_path(255)),
-    INDEX idx_related_file (related_file_id),
-    INDEX idx_uploader (uploader_id),
-    INDEX idx_source_type (source_type),
-    FOREIGN KEY (uploader_id) REFERENCES user(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文件资源表';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Attachment ID',
+    original_name VARCHAR(255) NULL COMMENT 'Original file name',
+    storage_path VARCHAR(512) NOT NULL COMMENT 'Object storage path',
+    file_type ENUM('IMAGE', 'VIDEO', 'DYNAMIC_COVER', 'DYNAMIC_VIDEO') NOT NULL COMMENT 'Stored resource type',
+    source_type VARCHAR(32) NULL COMMENT 'Source type such as Normal, iOS_LivePhoto, Android_MotionPhoto',
+    mime_type VARCHAR(64) NULL COMMENT 'MIME type',
+    file_size BIGINT NULL COMMENT 'Size in bytes',
+    width INT NULL COMMENT 'Media width',
+    height INT NULL COMMENT 'Media height',
+    duration FLOAT NULL COMMENT 'Duration in seconds',
+    cover_time FLOAT NULL COMMENT 'Cover frame time in seconds',
+    related_file_id BIGINT NULL COMMENT 'Related resource ID',
+    metadata_json TEXT NULL COMMENT 'Extended metadata JSON',
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    uploader_id BIGINT NULL COMMENT 'Uploader user ID',
+    INDEX idx_file_storage_path (storage_path(255)),
+    INDEX idx_file_related (related_file_id),
+    INDEX idx_file_uploader (uploader_id),
+    INDEX idx_file_source_type (source_type),
+    CONSTRAINT fk_file_uploader FOREIGN KEY (uploader_id) REFERENCES user(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Attachment resource table';
 
--- 消息表
 CREATE TABLE message (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
-    sender_id BIGINT NOT NULL COMMENT '发送者ID',
-    receiver_id BIGINT NOT NULL COMMENT '接收者ID',
-    type ENUM('TEXT', 'IMAGE', 'VIDEO', 'DYNAMIC_PHOTO') NOT NULL COMMENT '消息类型',
-    content TEXT COMMENT '文本内容',
-    resource_id BIGINT COMMENT '关联资源ID(封面图)',
-    video_resource_id BIGINT COMMENT '关联视频资源ID',
-    status VARCHAR(16) DEFAULT 'SENT' COMMENT '消息状态: SENT, DELIVERED, READ',
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    read_time TIMESTAMP NULL COMMENT '阅读时间',
-    INDEX idx_sender (sender_id, create_time),
-    INDEX idx_receiver (receiver_id, create_time),
-    INDEX idx_conversation (sender_id, receiver_id, create_time),
-    FOREIGN KEY (sender_id) REFERENCES user(id) ON DELETE CASCADE,
-    FOREIGN KEY (receiver_id) REFERENCES user(id) ON DELETE CASCADE,
-    FOREIGN KEY (resource_id) REFERENCES file_resource(id) ON DELETE SET NULL,
-    FOREIGN KEY (video_resource_id) REFERENCES file_resource(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息表';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Message ID',
+    sender_id BIGINT NOT NULL COMMENT 'Sender user ID',
+    receiver_id BIGINT NOT NULL COMMENT 'Receiver user ID',
+    type ENUM('TEXT', 'IMAGE', 'VIDEO', 'DYNAMIC_PHOTO', 'FILE') NOT NULL COMMENT 'Message type',
+    content TEXT NULL COMMENT 'Text content',
+    resource_id BIGINT NULL COMMENT 'Primary resource ID such as image or cover',
+    video_resource_id BIGINT NULL COMMENT 'Video resource ID',
+    status VARCHAR(16) NOT NULL DEFAULT 'SENT' COMMENT 'SENT, DELIVERED, READ',
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    read_time TIMESTAMP NULL COMMENT 'Read time',
+    INDEX idx_message_receiver_id (receiver_id, id),
+    INDEX idx_message_receiver_status (receiver_id, status, id),
+    INDEX idx_message_sender_receiver_time (sender_id, receiver_id, create_time, id),
+    INDEX idx_message_receiver_sender_time (receiver_id, sender_id, create_time, id),
+    INDEX idx_message_resource (resource_id),
+    INDEX idx_message_video_resource (video_resource_id),
+    CONSTRAINT fk_message_sender FOREIGN KEY (sender_id) REFERENCES user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_receiver FOREIGN KEY (receiver_id) REFERENCES user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_message_resource FOREIGN KEY (resource_id) REFERENCES file_resource(id) ON DELETE SET NULL,
+    CONSTRAINT fk_message_video_resource FOREIGN KEY (video_resource_id) REFERENCES file_resource(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Direct message table';
 
--- 会话表(可选,用于优化会话列表查询)
 CREATE TABLE conversation (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '会话ID',
-    user1_id BIGINT NOT NULL COMMENT '用户1 ID',
-    user2_id BIGINT NOT NULL COMMENT '用户2 ID',
-    last_message_id BIGINT COMMENT '最后一条消息ID',
-    last_message_time TIMESTAMP COMMENT '最后消息时间',
-    unread_count_user1 INT DEFAULT 0 COMMENT '用户1未读数',
-    unread_count_user2 INT DEFAULT 0 COMMENT '用户2未读数',
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY uk_users (user1_id, user2_id),
-    INDEX idx_user1 (user1_id, last_message_time),
-    INDEX idx_user2 (user2_id, last_message_time),
-    FOREIGN KEY (user1_id) REFERENCES user(id) ON DELETE CASCADE,
-    FOREIGN KEY (user2_id) REFERENCES user(id) ON DELETE CASCADE,
-    FOREIGN KEY (last_message_id) REFERENCES message(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话表';
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Conversation ID',
+    user1_id BIGINT NOT NULL COMMENT 'Smaller user ID in the pair',
+    user2_id BIGINT NOT NULL COMMENT 'Larger user ID in the pair',
+    last_message_id BIGINT NULL COMMENT 'Last message ID',
+    last_message_time TIMESTAMP NULL COMMENT 'Last message time',
+    unread_count_user1 INT NOT NULL DEFAULT 0 COMMENT 'Unread count for user1',
+    unread_count_user2 INT NOT NULL DEFAULT 0 COMMENT 'Unread count for user2',
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    CONSTRAINT uk_conversation_users UNIQUE (user1_id, user2_id),
+    INDEX idx_conversation_user1_recent (user1_id, last_message_time, update_time, id),
+    INDEX idx_conversation_user2_recent (user2_id, last_message_time, update_time, id),
+    INDEX idx_conversation_last_message (last_message_id),
+    CONSTRAINT fk_conversation_user1 FOREIGN KEY (user1_id) REFERENCES user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_conversation_user2 FOREIGN KEY (user2_id) REFERENCES user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_conversation_last_message FOREIGN KEY (last_message_id) REFERENCES message(id) ON DELETE SET NULL,
+    CONSTRAINT chk_conversation_users_order CHECK (user1_id < user2_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='One-to-one conversation summary table';
 
--- 初始化测试数据
-INSERT INTO user (username, password_hash, avatar_url) VALUES 
+INSERT INTO user (username, password_hash, avatar_url) VALUES
 ('alice', '$2a$10$dummy_hash_alice', 'https://example.com/avatars/alice.jpg'),
 ('bob', '$2a$10$dummy_hash_bob', 'https://example.com/avatars/bob.jpg');
