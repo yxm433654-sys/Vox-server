@@ -1,4 +1,4 @@
-﻿DROP DATABASE IF EXISTS chatdb;
+DROP DATABASE IF EXISTS chatdb;
 CREATE DATABASE chatdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE chatdb;
 
@@ -18,7 +18,7 @@ CREATE TABLE file_resource (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Attachment ID',
     original_name VARCHAR(255) NULL COMMENT 'Original file name',
     storage_path VARCHAR(512) NOT NULL COMMENT 'Object storage path',
-    file_type ENUM('IMAGE', 'VIDEO', 'DYNAMIC_COVER', 'DYNAMIC_VIDEO') NOT NULL COMMENT 'Stored resource type',
+    file_type ENUM('IMAGE', 'VIDEO', 'FILE', 'DYNAMIC_COVER', 'DYNAMIC_VIDEO') NOT NULL COMMENT 'Stored resource type',
     source_type VARCHAR(32) NULL COMMENT 'Source type such as Normal, iOS_LivePhoto, Android_MotionPhoto',
     mime_type VARCHAR(64) NULL COMMENT 'MIME type',
     file_size BIGINT NULL COMMENT 'Size in bytes',

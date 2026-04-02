@@ -46,13 +46,11 @@ public class AttachmentCommandService {
         File tempFile = fileStorageService.saveTempFile(file);
         try {
             String contentType = resolveMimeType(file.getContentType(), file.getOriginalFilename(), tempFile);
-            if (contentType == null || "application/octet-stream".equals(contentType)) {
-                throw new IllegalArgumentException("Unknown file type");
-            }
-            if (!isAllowedImage(contentType) && !isAllowedVideo(contentType)) {
-                throw new IllegalArgumentException("Unsupported file type: " + contentType);
+            if (contentType == null || contentType.isBlank()) {
+                contentType = "application/octet-stream";
             }
 
+            FileResource.FileType fileType = classifyFileType(contentType);
             String storagePath = fileStorageService.uploadToMinio(
                     tempFile,
                     generateObjectName(file.getOriginalFilename()),
@@ -62,7 +60,7 @@ public class AttachmentCommandService {
             FileResource resource = new FileResource();
             resource.setOriginalName(file.getOriginalFilename());
             resource.setStoragePath(storagePath);
-            resource.setFileType(isAllowedImage(contentType) ? FileResource.FileType.IMAGE : FileResource.FileType.VIDEO);
+            resource.setFileType(fileType);
             resource.setSourceType("Normal");
             resource.setMimeType(contentType);
             resource.setFileSize(file.getSize());
@@ -229,6 +227,16 @@ public class AttachmentCommandService {
         return normalized;
     }
 
+    private FileResource.FileType classifyFileType(String contentType) {
+        if (isAllowedImage(contentType)) {
+            return FileResource.FileType.IMAGE;
+        }
+        if (isAllowedVideo(contentType)) {
+            return FileResource.FileType.VIDEO;
+        }
+        return FileResource.FileType.FILE;
+    }
+
     private boolean isAllowedImage(String contentType) {
         return contentType != null && ALLOWED_IMAGE_TYPES.contains(contentType);
     }
@@ -274,6 +282,17 @@ public class AttachmentCommandService {
             case "mov", "qt" -> "video/quicktime";
             case "3gp" -> "video/3gpp";
             case "3g2" -> "video/3gpp2";
+            case "pdf" -> "application/pdf";
+            case "txt" -> "text/plain";
+            case "doc" -> "application/msword";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "xls" -> "application/vnd.ms-excel";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "ppt" -> "application/vnd.ms-powerpoint";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "zip" -> "application/zip";
+            case "rar" -> "application/vnd.rar";
+            case "7z" -> "application/x-7z-compressed";
             default -> null;
         };
     }

@@ -42,9 +42,14 @@ public class MessageMediaAssembler {
             return media;
         }
 
+        if (message.getType() == Message.MessageType.FILE) {
+            fillFileMedia(media, coverResource);
+            return media;
+        }
+
         fillTimedMedia(
                 media,
-                "LIVE_PHOTO",
+                "DYNAMIC_PHOTO",
                 resolveDynamicStatus(coverResource, playResource),
                 coverResource,
                 playResource
@@ -92,6 +97,16 @@ public class MessageMediaAssembler {
                 : (coverResource == null ? null : coverResource.getSourceType()));
     }
 
+    private void fillFileMedia(MessageMediaDto media, FileResource fileResource) {
+        media.setMediaKind("FILE");
+        media.setProcessingStatus(fileResource == null ? "FAILED" : "READY");
+        media.setPlayUrl(resolveClientUrl(fileResource, false));
+        media.setSourceType(fileResource == null ? null : fileResource.getMimeType());
+        media.setDuration(fileResource == null || fileResource.getFileSize() == null
+                ? null
+                : fileResource.getFileSize().floatValue());
+    }
+
     private String resolveClientUrl(FileResource resource, boolean skipPendingVideoCover) {
         if (resource == null) {
             return null;
@@ -136,4 +151,3 @@ public class MessageMediaAssembler {
         return width / (float) height;
     }
 }
-

@@ -103,9 +103,14 @@ public class MessageViewAssembler {
             return media;
         }
 
+        if (message.getType() == Message.MessageType.FILE) {
+            fillFileMedia(media, coverResource);
+            return media;
+        }
+
         fillTimedMedia(
                 media,
-                "LIVE_PHOTO",
+                "DYNAMIC_PHOTO",
                 resolveDynamicStatus(coverResource, playResource),
                 coverResource,
                 playResource
@@ -143,6 +148,16 @@ public class MessageViewAssembler {
                 playResource == null ? null : playResource.getHeight()));
         media.setSourceType(playResource != null ? playResource.getSourceType()
                 : (coverResource == null ? null : coverResource.getSourceType()));
+    }
+
+    private void fillFileMedia(MessageMediaView media, FileResource fileResource) {
+        media.setMediaKind("FILE");
+        media.setProcessingStatus(fileResource == null ? "FAILED" : "READY");
+        media.setPlayUrl(resolveClientUrl(fileResource, false));
+        media.setSourceType(fileResource == null ? null : fileResource.getMimeType());
+        media.setDuration(fileResource == null || fileResource.getFileSize() == null
+                ? null
+                : fileResource.getFileSize().floatValue());
     }
 
     private String resolveClientUrl(FileResource resource, boolean skipPendingVideoCover) {
@@ -189,4 +204,3 @@ public class MessageViewAssembler {
         return width / (float) height;
     }
 }
-

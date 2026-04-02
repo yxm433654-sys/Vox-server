@@ -16,18 +16,21 @@ public class WebSocketPushService {
     private final ObjectMapper objectMapper;
 
     public void pushNewMessage(Long userId, Object data) {
-        sessionRegistry.get(userId).ifPresent(session ->
-                send(session, Map.of("type", "NEW_MESSAGE", "data", data)));
+        broadcast(userId, Map.of("type", "NEW_MESSAGE", "data", data));
     }
 
     public void pushSessionUpdated(Long userId, Object data) {
-        sessionRegistry.get(userId).ifPresent(session ->
-                send(session, Map.of("type", "SESSION_UPDATED", "data", data)));
+        broadcast(userId, Map.of("type", "SESSION_UPDATED", "data", data));
     }
 
     public void pushSessionListChanged(Long userId) {
-        sessionRegistry.get(userId).ifPresent(session ->
-                send(session, Map.of("type", "SESSION_LIST_CHANGED")));
+        broadcast(userId, Map.of("type", "SESSION_LIST_CHANGED"));
+    }
+
+    private void broadcast(Long userId, Object payload) {
+        for (WebSocketSession session : sessionRegistry.getAll(userId)) {
+            send(session, payload);
+        }
     }
 
     private void send(WebSocketSession session, Object payload) {
