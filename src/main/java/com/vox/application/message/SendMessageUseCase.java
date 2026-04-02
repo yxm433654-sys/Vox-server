@@ -4,6 +4,7 @@ import com.vox.infrastructure.persistence.entity.Message;
 import com.vox.application.session.SessionWorkflowService;
 import com.vox.infrastructure.persistence.message.MessageCommandRepository;
 import com.vox.infrastructure.realtime.RealtimePushGateway;
+import com.vox.infrastructure.persistence.user.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ public class SendMessageUseCase {
     private final MessageCommandRepository messageCommandRepository;
     private final MessageViewAssembler messageViewAssembler;
     private final RealtimePushGateway realtimePushGateway;
+    private final UserAccountRepository userAccountRepository;
     private final SessionWorkflowService sessionWorkflowService;
 
     @Transactional
@@ -59,6 +61,12 @@ public class SendMessageUseCase {
         }
         if (Objects.equals(request.getSenderId(), request.getReceiverId())) {
             throw new IllegalArgumentException("receiverId must be different from senderId");
+        }
+        if (userAccountRepository.findById(request.getSenderId()).isEmpty()) {
+            throw new IllegalArgumentException("senderId does not exist");
+        }
+        if (userAccountRepository.findById(request.getReceiverId()).isEmpty()) {
+            throw new IllegalArgumentException("receiverId does not exist");
         }
         if (type == Message.MessageType.TEXT
                 && (request.getContent() == null || request.getContent().isBlank())) {
