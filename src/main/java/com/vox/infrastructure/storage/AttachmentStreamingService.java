@@ -6,12 +6,15 @@ import com.vox.infrastructure.storage.FileStorageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class AttachmentStreamingService {
 
@@ -35,7 +38,7 @@ public class AttachmentStreamingService {
                 response.setContentLengthLong(totalSize);
             }
             try (InputStream stream = fileStorageService.openObject(resource.getStoragePath())) {
-                stream.transferTo(response.getOutputStream());
+                transferToClient(stream, response, resource.getId());
             }
             return;
         }
@@ -55,8 +58,34 @@ public class AttachmentStreamingService {
         response.setContentLengthLong(length);
 
         try (InputStream stream = fileStorageService.openObjectRange(resource.getStoragePath(), start, length)) {
-            stream.transferTo(response.getOutputStream());
+            transferToClient(stream, response, resource.getId());
         }
+    }
+
+
+    private void transferToClient(InputStream stream, HttpServletResponse response, Long resourceId) throws IOException {
+        try {
+            stream.transferTo(response.getOutputStream());
+        } catch (IOException exception) {
+            if (isClientAbort(exception)) {
+                log.debug("Attachment stream interrupted by client for resource {}", resourceId);
+                return;
+            }
+            throw exception;
+        }
+    }
+
+    private boolean isClientAbort(IOException exception) {
+        String message = exception.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("broken pipe")
+                || normalized.contains("connection reset")
+                || normalized.contains("forcibly closed")
+                || normalized.contains("abort")
+                || normalized.contains("closed");
     }
 
     private static long[] resolveRange(String rangeHeader, long totalSize) {

@@ -27,6 +27,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AttachmentCommandService {
 
+    private static final int MAX_ORIGINAL_NAME_LENGTH = 255;
+
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif", "image/webp", "image/gif"
     );
@@ -58,7 +60,7 @@ public class AttachmentCommandService {
             );
 
             FileResource resource = new FileResource();
-            resource.setOriginalName(file.getOriginalFilename());
+            resource.setOriginalName(normalizeOriginalName(file.getOriginalFilename()));
             resource.setStoragePath(storagePath);
             resource.setFileType(fileType);
             resource.setSourceType("Normal");
@@ -185,7 +187,7 @@ public class AttachmentCommandService {
             Long userId
     ) {
         FileResource resource = new FileResource();
-        resource.setOriginalName(originalName);
+        resource.setOriginalName(normalizeOriginalName(originalName));
         resource.setStoragePath(storagePath);
         resource.setFileType(fileType);
         resource.setSourceType(sourceType);
@@ -208,6 +210,29 @@ public class AttachmentCommandService {
         int dot = originalFilename.lastIndexOf('.');
         String extension = dot >= 0 ? originalFilename.substring(dot) : "";
         return "files/" + UUID.randomUUID() + extension;
+    }
+
+    private String normalizeOriginalName(String originalName) {
+        if (originalName == null || originalName.isBlank()) {
+            return "attachment";
+        }
+        String trimmed = originalName.trim();
+        if (trimmed.length() <= MAX_ORIGINAL_NAME_LENGTH) {
+            return trimmed;
+        }
+
+        int dot = trimmed.lastIndexOf('.');
+        if (dot <= 0 || dot == trimmed.length() - 1) {
+            return trimmed.substring(0, MAX_ORIGINAL_NAME_LENGTH);
+        }
+
+        String extension = trimmed.substring(dot);
+        int maxBaseLength = Math.max(1, MAX_ORIGINAL_NAME_LENGTH - extension.length());
+        String baseName = trimmed.substring(0, dot);
+        if (baseName.length() > maxBaseLength) {
+            baseName = baseName.substring(0, maxBaseLength);
+        }
+        return baseName + extension;
     }
 
     private String resolveMimeType(String declaredContentType, String originalFilename, File tempFile)
