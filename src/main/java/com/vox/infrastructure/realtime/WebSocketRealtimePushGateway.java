@@ -23,4 +23,9 @@ public class WebSocketRealtimePushGateway implements RealtimePushGateway {
     public void pushSessionListChanged(Long userId) {
         webSocketPushService.pushSessionListChanged(userId);
     }
+
+    @Override
+    public void pushMessageRead(Long userId, Object data) {
+        webSocketPushService.pushMessageRead(userId, data);
+    }
 }

@@ -9,13 +9,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class MarkMessageReadUseCase {
 
     private final MessageCommandRepository messageCommandRepository;
-    private final MessageViewAssembler messageViewAssembler;
     private final RealtimePushGateway realtimePushGateway;
     private final SessionWorkflowService sessionWorkflowService;
 
@@ -28,8 +28,12 @@ public class MarkMessageReadUseCase {
         Message saved = messageCommandRepository.save(message);
         sessionWorkflowService.clearUnreadForPair(saved.getReceiverId(), saved.getSenderId());
 
-        MessageView messageView = messageViewAssembler.toView(saved);
-        realtimePushGateway.pushNewMessage(saved.getSenderId(), messageView);
+        // Notify the original sender that their message was read.
+        // Use a dedicated READ_RECEIPT event so the client can update delivery status
+        // without confusing it with a new incoming message.
+        realtimePushGateway.pushMessageRead(saved.getSenderId(), Map.of(
+                "messageId", saved.getId(),
+                "readTime", saved.getReadTime().toString()
+        ));
     }
 }
-

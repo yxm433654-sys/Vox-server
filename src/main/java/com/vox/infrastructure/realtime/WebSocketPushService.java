@@ -27,6 +27,14 @@ public class WebSocketPushService {
         broadcast(userId, Map.of("type", "SESSION_LIST_CHANGED"));
     }
 
+    /**
+     * Sends a READ_RECEIPT event to the original message sender.
+     * Clients use this to update the delivery/read indicator on sent messages.
+     */
+    public void pushMessageRead(Long userId, Object data) {
+        broadcast(userId, Map.of("type", "READ_RECEIPT", "data", data));
+    }
+
     private void broadcast(Long userId, Object payload) {
         for (WebSocketSession session : sessionRegistry.getAll(userId)) {
             send(session, payload);
@@ -35,11 +43,8 @@ public class WebSocketPushService {
 
     private void send(WebSocketSession session, Object payload) {
         try {
-            if (!session.isOpen()) {
-                return;
-            }
-            String json = objectMapper.writeValueAsString(payload);
-            session.sendMessage(new TextMessage(json));
+            if (!session.isOpen()) return;
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
         } catch (Exception ignored) {
         }
     }

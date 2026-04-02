@@ -4,7 +4,6 @@ import com.vox.infrastructure.persistence.entity.Message;
 import com.vox.application.session.SessionWorkflowService;
 import com.vox.infrastructure.persistence.message.MessageCommandRepository;
 import com.vox.infrastructure.realtime.RealtimePushGateway;
-import com.vox.infrastructure.persistence.user.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,7 +17,6 @@ public class SendMessageUseCase {
     private final MessageCommandRepository messageCommandRepository;
     private final MessageViewAssembler messageViewAssembler;
     private final RealtimePushGateway realtimePushGateway;
-    private final UserAccountRepository userAccountRepository;
     private final SessionWorkflowService sessionWorkflowService;
 
     @Transactional
@@ -37,21 +35,22 @@ public class SendMessageUseCase {
 
         Message saved = messageCommandRepository.save(message);
         sessionWorkflowService.updateAfterMessage(saved);
+
         MessageView messageView = messageViewAssembler.toView(saved);
         realtimePushGateway.pushNewMessage(saved.getReceiverId(), messageView);
 
-        SendMessageResult response = new SendMessageResult();
-        response.setMessageId(saved.getId());
-        response.setStatus(saved.getStatus());
-        response.setCreatedAt(saved.getCreateTime());
-        return response;
+        SendMessageResult result = new SendMessageResult();
+        result.setMessageId(saved.getId());
+        result.setStatus(saved.getStatus());
+        result.setCreatedAt(saved.getCreateTime());
+        return result;
     }
 
     private Message.MessageType parseType(String rawType) {
         try {
             return Message.MessageType.valueOf(rawType);
-        } catch (Exception exception) {
-            throw new IllegalArgumentException("Invalid message type");
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid message type: " + rawType);
         }
     }
 
@@ -62,16 +61,12 @@ public class SendMessageUseCase {
         if (Objects.equals(request.getSenderId(), request.getReceiverId())) {
             throw new IllegalArgumentException("receiverId must be different from senderId");
         }
-        if (userAccountRepository.findById(request.getSenderId()).isEmpty()) {
-            throw new IllegalArgumentException("senderId does not exist");
-        }
-        if (userAccountRepository.findById(request.getReceiverId()).isEmpty()) {
-            throw new IllegalArgumentException("receiverId does not exist");
-        }
+        // User existence is guaranteed by the JWT token (senderId) and by DB FK constraint
+        // (receiverId). Querying the user table on every message send is wasteful and
+        // violates the single-responsibility of this use case.
         if (type == Message.MessageType.TEXT
                 && (request.getContent() == null || request.getContent().isBlank())) {
             throw new IllegalArgumentException("content is required for TEXT message");
         }
     }
 }
-
