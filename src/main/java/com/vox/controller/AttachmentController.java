@@ -73,6 +73,12 @@ public class AttachmentController {
             }
             AttachmentSummary summary = uploadAttachmentUseCase.uploadLivePhoto(jpeg, mov, userId);
             return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
+            HttpStatus status = message.toLowerCase().contains("unsupported")
+                    ? HttpStatus.UNSUPPORTED_MEDIA_TYPE
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(ApiResponse.error(message));
         } catch (Exception e) {
             log.error("Live photo upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -91,6 +97,12 @@ public class AttachmentController {
             }
             AttachmentSummary summary = uploadAttachmentUseCase.uploadMotionPhoto(file, userId);
             return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
+            HttpStatus status = message.toLowerCase().contains("unsupported")
+                    ? HttpStatus.UNSUPPORTED_MEDIA_TYPE
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(ApiResponse.error(message));
         } catch (Exception e) {
             log.error("Motion photo upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

@@ -17,6 +17,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -26,6 +29,12 @@ public class GoogleMotionPhotoExtractor implements MotionPhotoExtractor {
     private static final String XMP_END = "</x:xmpmeta>";
     private static final int INITIAL_SEARCH_SIZE = 65536;
     private static final int MAX_SEARCH_SIZE = 1024 * 1024;
+    private static final List<Pattern> OFFSET_PATTERNS = List.of(
+            Pattern.compile("microvideooffset\\s*=\\s*\"(\\d+)\"", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("microvideooffset[^0-9]{0,32}(\\d{4,})", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("item:length\\s*=\\s*\"(\\d+)\"", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("<[^>]*microvideooffset[^>]*>(\\d+)</", Pattern.CASE_INSENSITIVE)
+    );
 
     @Override
     public boolean supports(File sourceFile) {
@@ -102,7 +111,18 @@ public class GoogleMotionPhotoExtractor implements MotionPhotoExtractor {
     private boolean isMotionPhoto(File file) {
         try {
             String xmp = extractXmpMetadata(file);
-            return xmp != null && xmp.contains("GContainer:Item");
+            if (xmp == null || xmp.isBlank()) {
+                return false;
+            }
+            String normalized = xmp.toLowerCase();
+            return normalized.contains("gcamera:motionphoto")
+                    || normalized.contains("microvideooffset")
+                    || normalized.contains("microvideopresentationtimestampus")
+                    || normalized.contains("microvideo")
+                    || normalized.contains("motionphoto")
+                    || normalized.contains("container:directory")
+                    || normalized.contains("gcontainer:item")
+                    || tryParseVideoOffsetFromText(xmp) != null;
         } catch (Exception e) {
             log.debug("File is not a Motion Photo: {}", file.getName());
             return false;
@@ -179,14 +199,45 @@ public class GoogleMotionPhotoExtractor implements MotionPhotoExtractor {
             }
 
             if (metadata.getVideoOffset() == 0) {
+                Long fallbackOffset = tryParseVideoOffsetFromText(xmp);
+                if (fallbackOffset != null && fallbackOffset > 0) {
+                    metadata.setVideoOffset(fallbackOffset);
+                    metadata.setVideoMimeType("video/mp4");
+                }
+            }
+            if (metadata.getVideoOffset() == 0) {
                 throw new ParseException("Video offset not found in XMP metadata");
             }
             return metadata;
         } catch (ParseException e) {
             throw e;
         } catch (Exception e) {
+            Long fallbackOffset = tryParseVideoOffsetFromText(xmp);
+            if (fallbackOffset != null && fallbackOffset > 0) {
+                MotionPhotoMetadata metadata = new MotionPhotoMetadata();
+                metadata.setVideoOffset(fallbackOffset);
+                metadata.setVideoMimeType("video/mp4");
+                return metadata;
+            }
             throw new ParseException("Failed to parse XMP metadata", e);
         }
+    }
+
+    private Long tryParseVideoOffsetFromText(String xmp) {
+        if (xmp == null || xmp.isBlank()) {
+            return null;
+        }
+        for (Pattern pattern : OFFSET_PATTERNS) {
+            Matcher matcher = pattern.matcher(xmp);
+            if (!matcher.find()) {
+                continue;
+            }
+            try {
+                return Long.parseLong(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return null;
     }
 
     private String getAttrOrChild(Element parent, String name) {

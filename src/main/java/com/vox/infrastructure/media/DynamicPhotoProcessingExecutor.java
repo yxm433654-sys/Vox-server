@@ -3,7 +3,9 @@ package com.vox.infrastructure.media;
 import com.vox.infrastructure.media.live.LivePhotoExtractor;
 import com.vox.infrastructure.media.live.LivePhotoMetadata;
 import com.vox.infrastructure.media.live.LivePhotoResolver;
+import com.vox.infrastructure.media.motion.MotionPhotoContainerParser;
 import com.vox.infrastructure.media.motion.MotionPhotoExtractor;
+import com.vox.infrastructure.media.motion.MotionPhotoMp4Detector;
 import com.vox.infrastructure.media.motion.MotionPhotoResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +31,8 @@ public class DynamicPhotoProcessingExecutor {
 
     private final LivePhotoResolver livePhotoResolver;
     private final MotionPhotoResolver motionPhotoResolver;
+    private final MotionPhotoContainerParser motionPhotoContainerParser;
+    private final MotionPhotoMp4Detector motionPhotoMp4Detector;
     private final MediaTranscodeService mediaTranscodeService;
     private final MediaProbeService mediaProbeService;
     private final DynamicPhotoResourcePersistenceService resourcePersistenceService;
@@ -36,32 +40,42 @@ public class DynamicPhotoProcessingExecutor {
     @Value("${app.temp-dir:tmp/chat-uploads}")
     private String tempDir;
 
+    @Value("${app.dynamic-photo.auto-transcode:true}")
+    private boolean autoTranscode;
+
     @Async("taskExecutor")
     public void processLivePhoto(String jpegPath, String movPath, Long coverId, Long videoId) {
         File jpegFile = new File(jpegPath);
         File movFile = new File(movPath);
         File transcodedVideo = new File(ensureTempDir(), UUID.randomUUID() + "_transcoded.mp4");
+        File finalVideo = transcodedVideo;
 
         try {
             LivePhotoExtractor extractor = livePhotoResolver.resolve(jpegFile, movFile);
             LivePhotoMetadata metadata = extractor.extract(jpegFile, movFile);
-            mediaTranscodeService.transcodeToMp4(movFile, transcodedVideo);
+            if (autoTranscode) {
+                mediaTranscodeService.transcodeToMp4(movFile, transcodedVideo);
+            } else {
+                finalVideo = movFile;
+            }
 
             int[] dimensions = null;
             try {
-                dimensions = mediaProbeService.getVideoDimensions(transcodedVideo);
+                dimensions = mediaProbeService.getVideoDimensions(finalVideo);
             } catch (Exception ignored) {
             }
 
             resourcePersistenceService.saveProcessedDynamicPhoto(
-                    coverId, videoId, jpegFile, transcodedVideo,
+                    coverId, videoId, jpegFile, finalVideo,
                     metadata.getDuration(), dimensions);
         } catch (Exception e) {
             log.warn("Failed to process live photo: coverId={}, videoId={}", coverId, videoId, e);
         } finally {
             safeDelete(jpegFile);
             safeDelete(movFile);
-            safeDelete(transcodedVideo);
+            if (finalVideo != movFile) {
+                safeDelete(transcodedVideo);
+            }
         }
     }
 
@@ -72,28 +86,64 @@ public class DynamicPhotoProcessingExecutor {
         File coverFile = null;
         File videoFile = null;
         File transcodedVideo = new File(outputDir, UUID.randomUUID() + "_transcoded.mp4");
+        File finalVideo = transcodedVideo;
 
         try {
-            MotionPhotoExtractor extractor = motionPhotoResolver.resolve(motionPhotoFile);
-            coverFile = extractor.extractCoverImage(motionPhotoFile, outputDir);
-            videoFile = extractor.extractVideo(motionPhotoFile, outputDir);
-            mediaTranscodeService.transcodeToMp4(videoFile, transcodedVideo);
+            MotionPhotoContainerParser.MotionPhotoLayout layout =
+                    motionPhotoContainerParser.parse(motionPhotoFile).orElse(null);
+            if (layout != null) {
+                coverFile = motionPhotoMp4Detector.extractCoverImage(
+                        motionPhotoFile, outputDir, layout.primaryLength());
+                videoFile = motionPhotoMp4Detector.extractVideo(
+                        motionPhotoFile, outputDir, layout.videoStart(), layout.videoLength());
+            } else if (motionPhotoResolver.supports(motionPhotoFile)) {
+                MotionPhotoExtractor extractor = motionPhotoResolver.resolve(motionPhotoFile);
+                coverFile = extractor.extractCoverImage(motionPhotoFile, outputDir);
+                videoFile = extractor.extractVideo(motionPhotoFile, outputDir);
+            } else {
+                MotionPhotoMp4Detector.EmbeddedMp4 embeddedMp4 =
+                        motionPhotoMp4Detector.detect(motionPhotoFile)
+                                .orElseThrow(() -> new IllegalArgumentException(
+                                        "No embedded MP4 segment found in motion photo"));
+                coverFile = motionPhotoMp4Detector.extractCoverImage(
+                        motionPhotoFile, outputDir, embeddedMp4.videoStart());
+                videoFile = motionPhotoMp4Detector.extractVideo(
+                        motionPhotoFile, outputDir, embeddedMp4.videoStart(), embeddedMp4.videoLength());
+            }
+            if (shouldSkipTranscode(videoFile)) {
+                finalVideo = videoFile;
+                log.info("Skipping transcode for motion photo video: input={}", videoFile.getName());
+            } else {
+                mediaTranscodeService.transcodeToMp4(videoFile, transcodedVideo);
+            }
 
             Float duration = null;
             int[] dimensions = null;
-            try { duration = mediaProbeService.getVideoDuration(transcodedVideo); } catch (Exception ignored) {}
-            try { dimensions = mediaProbeService.getVideoDimensions(transcodedVideo); } catch (Exception ignored) {}
+            try { duration = mediaProbeService.getVideoDuration(finalVideo); } catch (Exception ignored) {}
+            try { dimensions = mediaProbeService.getVideoDimensions(finalVideo); } catch (Exception ignored) {}
 
             resourcePersistenceService.saveProcessedDynamicPhoto(
-                    coverId, videoId, coverFile, transcodedVideo, duration, dimensions);
+                    coverId, videoId, coverFile, finalVideo, duration, dimensions);
         } catch (Exception e) {
             log.warn("Failed to process motion photo: coverId={}, videoId={}", coverId, videoId, e);
         } finally {
             safeDelete(motionPhotoFile);
             safeDelete(coverFile);
             safeDelete(videoFile);
-            safeDelete(transcodedVideo);
+            if (finalVideo != videoFile) {
+                safeDelete(transcodedVideo);
+            }
         }
+    }
+
+    private boolean shouldSkipTranscode(File videoFile) {
+        if (videoFile == null || !videoFile.exists()) {
+            return false;
+        }
+        if (!autoTranscode) {
+            return true;
+        }
+        return videoFile.getName().toLowerCase().endsWith(".mp4");
     }
 
     private File ensureTempDir() {

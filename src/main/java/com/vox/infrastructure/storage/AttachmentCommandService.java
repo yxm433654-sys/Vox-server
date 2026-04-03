@@ -5,8 +5,12 @@ import com.vox.infrastructure.media.DynamicPhotoProcessingService;
 import com.vox.infrastructure.media.MediaProbeService;
 import com.vox.infrastructure.media.MediaSourceTypes;
 import com.vox.infrastructure.media.VideoCoverWorkflowService;
+import com.vox.infrastructure.media.motion.MotionPhotoContainerParser;
+import com.vox.infrastructure.media.motion.MotionPhotoMp4Detector;
+import com.vox.infrastructure.media.motion.MotionPhotoResolver;
 import com.vox.infrastructure.persistence.entity.FileResource;
 import com.vox.infrastructure.persistence.repository.FileResourceRepository;
+import com.vox.infrastructure.persistence.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,10 +44,16 @@ public class AttachmentCommandService {
     private final VideoCoverWorkflowService videoCoverWorkflowService;
     private final DynamicPhotoProcessingService dynamicPhotoProcessingService;
     private final MimeTypeResolver mimeTypeResolver;
+    private final UserRepository userRepository;
+    private final MotionPhotoContainerParser motionPhotoContainerParser;
+    private final MotionPhotoMp4Detector motionPhotoMp4Detector;
+    private final MotionPhotoResolver motionPhotoResolver;
 
     @Transactional
     public AttachmentSummary uploadFile(MultipartFile file, Long userId) throws Exception {
+        validateUploader(userId);
         File tempFile = fileStorageService.saveTempFile(file);
+        boolean keepTempFileForAsyncProcessing = false;
         try {
             String contentType = mimeTypeResolver.resolve(
                     file.getContentType(), file.getOriginalFilename(), tempFile);
@@ -52,6 +62,13 @@ public class AttachmentCommandService {
             }
 
             FileResource.FileType fileType = classifyFileType(contentType);
+            if (fileType == FileResource.FileType.IMAGE
+                    && (motionPhotoContainerParser.parse(tempFile).isPresent()
+                    || motionPhotoResolver.supports(tempFile)
+                    || motionPhotoMp4Detector.hasEmbeddedMp4(tempFile))) {
+                keepTempFileForAsyncProcessing = true;
+                return createPendingMotionPhoto(file, tempFile, userId);
+            }
             String storagePath = fileStorageService.uploadToMinio(
                     tempFile, generateObjectName(file.getOriginalFilename()), contentType);
 
@@ -79,13 +96,16 @@ public class AttachmentCommandService {
             }
             return attachmentSummaryMapper.toUploadSummary(saved, coverResource);
         } finally {
-            tempFile.delete();
+            if (!keepTempFileForAsyncProcessing) {
+                tempFile.delete();
+            }
         }
     }
 
     @Transactional
     public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId)
             throws Exception {
+        validateUploader(userId);
         File jpegFile = fileStorageService.saveTempFile(jpeg);
         File movFile = fileStorageService.saveTempFile(mov);
 
@@ -111,6 +131,7 @@ public class AttachmentCommandService {
 
     @Transactional
     public AttachmentSummary uploadMotionPhoto(MultipartFile file, Long userId) throws Exception {
+        validateUploader(userId);
         File motionPhotoFile = fileStorageService.saveTempFile(file);
 
         FileResource savedCover = createPendingDynamicResource(
@@ -143,6 +164,37 @@ public class AttachmentCommandService {
             if (image.getHeight() > 0) resource.setHeight(image.getHeight());
         } catch (Exception ignored) {
         }
+    }
+
+    private void validateUploader(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        if (userId <= 0 || !userRepository.existsById(userId)) {
+            throw new IllegalArgumentException("Uploader userId not found: " + userId);
+        }
+    }
+
+    private AttachmentSummary createPendingMotionPhoto(
+            MultipartFile file, File motionPhotoFile, Long userId) {
+        FileResource savedCover = createPendingDynamicResource(
+                file.getOriginalFilename(),
+                "dynamic/cover_" + UUID.randomUUID() + ".jpg",
+                FileResource.FileType.DYNAMIC_COVER,
+                MediaSourceTypes.ANDROID_MOTION_PHOTO,
+                userId);
+        FileResource savedVideo = createPendingDynamicResource(
+                file.getOriginalFilename(),
+                "dynamic/video_" + UUID.randomUUID() + ".mp4",
+                FileResource.FileType.DYNAMIC_VIDEO,
+                MediaSourceTypes.ANDROID_MOTION_PHOTO,
+                userId);
+        linkRelatedResources(savedCover, savedVideo);
+
+        dynamicPhotoProcessingService.scheduleMotionPhotoProcessing(
+                motionPhotoFile.getAbsolutePath(),
+                savedCover.getId(), savedVideo.getId());
+        return attachmentSummaryMapper.toDynamicPhotoSummary(savedCover, savedVideo);
     }
 
     private void fillVideoMetadata(FileResource resource, File tempFile) {

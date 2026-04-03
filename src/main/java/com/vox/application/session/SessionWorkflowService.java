@@ -31,7 +31,7 @@ public class SessionWorkflowService {
         session.setLastMessageTime(message.getCreateTime());
         session.incrementUnreadFor(message.getReceiverId());
         Session saved = sessionStateRepository.save(session);
-        pushSessionRefresh(saved, message.getSenderId(), message.getReceiverId());
+        pushSessionRefresh(saved, message.getSenderId(), message.getReceiverId(), message);
         return saved;
     }
 
@@ -93,24 +93,29 @@ public class SessionWorkflowService {
         return sessionStateRepository.findBetweenUsers(first, second);
     }
 
-    private void pushSessionRefresh(Session session, Long firstUserId, Long secondUserId) {
+    private void pushSessionRefresh(Session session, Long firstUserId, Long secondUserId, Message lastMessage) {
         if (session == null) {
             return;
         }
-        pushSessionRefreshForUser(session, firstUserId);
-        pushSessionRefreshForUser(session, secondUserId);
+        pushSessionRefreshForUser(session, firstUserId, lastMessage);
+        pushSessionRefreshForUser(session, secondUserId, lastMessage);
     }
 
-    private void pushSessionRefreshForUser(Session session, Long userId) {
+    private void pushSessionRefresh(Session session, Long firstUserId, Long secondUserId) {
+        pushSessionRefresh(session, firstUserId, secondUserId, null);
+    }
+
+    private void pushSessionRefreshForUser(Session session, Long userId, Message lastMessageOverride) {
         if (userId == null || !session.involves(userId)) {
             return;
         }
 
         Long peerId = session.peerIdOf(userId);
         User peer = userProfileRepository.findById(peerId).orElse(null);
-        Message lastMessage = session.getLastMessageId() == null
-                ? null
-                : messageLookupRepository.findById(session.getLastMessageId()).orElse(null);
+        Message lastMessage = lastMessageOverride;
+        if (lastMessage == null && session.getLastMessageId() != null) {
+            lastMessage = messageLookupRepository.findById(session.getLastMessageId()).orElse(null);
+        }
 
         SessionResponse response = sessionResponseMapper.toResponse(
                 com.vox.domain.session.SessionSummary.builder()

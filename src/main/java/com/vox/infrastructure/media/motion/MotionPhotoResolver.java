@@ -20,4 +20,8 @@ public class MotionPhotoResolver {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No motion photo extractor supports the provided file"));
     }
+
+    public boolean supports(File sourceFile) {
+        return extractors.stream().anyMatch(extractor -> extractor.supports(sourceFile));
+    }
 }
