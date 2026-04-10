@@ -20,6 +20,10 @@ public class AttachmentStorageClient {
         return attachmentCommandService.uploadFile(file, userId);
     }
 
+    public AttachmentSummary uploadFile(MultipartFile file, Long userId, boolean skipMotionDetect) throws Exception {
+        return attachmentCommandService.uploadFile(file, userId, skipMotionDetect);
+    }
+
     public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception {
         return attachmentCommandService.uploadLivePhoto(jpeg, mov, userId);
     }

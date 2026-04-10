@@ -143,6 +143,46 @@ public class MediaTranscodeService {
         }
     }
 
+    public File convertImageToJpeg(File inputFile, File outputFile) throws TranscodeException {
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-i");
+        command.add(inputFile.getAbsolutePath());
+        command.add("-y");
+        command.add(outputFile.getAbsolutePath());
+
+        log.info("Converting image to JPEG: input={}, output={}", inputFile.getName(), outputFile.getName());
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+            Thread outputDrainer = drainOutput(process, output);
+            outputDrainer.start();
+
+            boolean finished = process.waitFor(coverTimeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                outputDrainer.join(1000);
+                throw new TranscodeException("Image conversion timeout: " + output);
+            }
+
+            outputDrainer.join(1000);
+            if (process.exitValue() != 0 || !outputFile.exists() || outputFile.length() <= 0) {
+                throw new TranscodeException("Failed to convert image to JPEG: " + output);
+            }
+
+            log.info("Image converted to JPEG: {}, size={} bytes", outputFile.getName(), outputFile.length());
+            return outputFile;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new TranscodeException("Image conversion interrupted", e);
+        } catch (Exception e) {
+            throw new TranscodeException("Failed to convert image to JPEG", e);
+        }
+    }
+
     public boolean checkFFmpegAvailable() {
         try {
             ProcessBuilder pb = new ProcessBuilder(ffmpegPath, "-version");

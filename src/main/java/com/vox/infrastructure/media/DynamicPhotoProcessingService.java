@@ -19,8 +19,8 @@ public class DynamicPhotoProcessingService {
     private final DynamicPhotoProcessingExecutor executor;
 
     public void scheduleLivePhotoProcessing(
-            String jpegPath, String movPath, Long coverId, Long videoId) {
-        runAfterCommit(() -> executor.processLivePhoto(jpegPath, movPath, coverId, videoId));
+            String imagePath, String videoPath, Long coverId, Long videoId) {
+        runAfterCommit(() -> executor.processLivePhoto(imagePath, videoPath, coverId, videoId));
     }
 
     public void scheduleMotionPhotoProcessing(

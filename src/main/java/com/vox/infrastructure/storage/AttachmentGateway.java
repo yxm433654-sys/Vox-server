@@ -8,7 +8,9 @@ import org.springframework.web.multipart.MultipartFile;
 public interface AttachmentGateway {
     AttachmentSummary uploadFile(MultipartFile file, Long userId) throws Exception;
 
-    AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception;
+    AttachmentSummary uploadFile(MultipartFile file, Long userId, boolean skipMotionDetect) throws Exception;
+
+    AttachmentSummary uploadLivePhoto(MultipartFile image, MultipartFile video, Long userId) throws Exception;
 
     AttachmentSummary uploadMotionPhoto(MultipartFile file, Long userId) throws Exception;
 

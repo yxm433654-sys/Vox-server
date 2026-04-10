@@ -39,13 +39,14 @@ public class AttachmentController {
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<AttachmentResponse>> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "userId", required = false) Long userId
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "skipMotionDetect", required = false, defaultValue = "false") boolean skipMotionDetect
     ) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(ApiResponse.error("File is empty"));
             }
-            AttachmentSummary summary = uploadAttachmentUseCase.uploadFile(file, userId);
+            AttachmentSummary summary = uploadAttachmentUseCase.uploadFile(file, userId, skipMotionDetect);
             return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
         } catch (IllegalArgumentException e) {
             String message = e.getMessage() == null ? "Invalid request" : e.getMessage();
@@ -62,16 +63,16 @@ public class AttachmentController {
 
     @PostMapping(value = "/upload/live-photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<AttachmentResponse>> uploadLivePhoto(
-            @RequestParam("jpeg") MultipartFile jpeg,
-            @RequestParam("mov") MultipartFile mov,
+            @RequestParam("image") MultipartFile image,
+            @RequestParam("video") MultipartFile video,
             @RequestParam(value = "userId", required = false) Long userId
     ) {
         try {
-            if (jpeg.isEmpty() || mov.isEmpty()) {
+            if (image.isEmpty() || video.isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Both JPEG and MOV files are required"));
+                        .body(ApiResponse.error("Both image and video files are required"));
             }
-            AttachmentSummary summary = uploadAttachmentUseCase.uploadLivePhoto(jpeg, mov, userId);
+            AttachmentSummary summary = uploadAttachmentUseCase.uploadLivePhoto(image, video, userId);
             return ResponseEntity.ok(ApiResponse.success(attachmentResponseMapper.toResponse(summary)));
         } catch (IllegalArgumentException e) {
             String message = e.getMessage() == null ? "Invalid request" : e.getMessage();

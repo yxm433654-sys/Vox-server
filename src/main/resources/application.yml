@@ -28,7 +28,7 @@ spring:
       enabled: true
       max-file-size: 256MB
       max-request-size: 256MB
-      file-size-threshold: 2KB
+      file-size-threshold: 512KB
 
 server:
   port: 8080

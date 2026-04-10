@@ -4,10 +4,11 @@ import com.vox.domain.attachment.AttachmentSummary;
 import com.vox.infrastructure.media.DynamicPhotoProcessingService;
 import com.vox.infrastructure.media.MediaProbeService;
 import com.vox.infrastructure.media.MediaSourceTypes;
+import com.vox.infrastructure.media.MediaTranscodeService;
 import com.vox.infrastructure.media.VideoCoverWorkflowService;
+import com.vox.infrastructure.media.VideoTranscodeExecutor;
 import com.vox.infrastructure.media.motion.MotionPhotoContainerParser;
 import com.vox.infrastructure.media.motion.MotionPhotoMp4Detector;
-import com.vox.infrastructure.media.motion.MotionPhotoResolver;
 import com.vox.infrastructure.persistence.entity.FileResource;
 import com.vox.infrastructure.persistence.repository.FileResourceRepository;
 import com.vox.infrastructure.persistence.repository.UserRepository;
@@ -43,16 +44,23 @@ public class AttachmentCommandService {
     private final MediaProbeService mediaProbeService;
     private final VideoCoverWorkflowService videoCoverWorkflowService;
     private final DynamicPhotoProcessingService dynamicPhotoProcessingService;
+    private final MediaTranscodeService mediaTranscodeService;
     private final MimeTypeResolver mimeTypeResolver;
     private final UserRepository userRepository;
     private final MotionPhotoContainerParser motionPhotoContainerParser;
     private final MotionPhotoMp4Detector motionPhotoMp4Detector;
-    private final MotionPhotoResolver motionPhotoResolver;
+    private final VideoTranscodeExecutor videoTranscodeExecutor;
 
     @Transactional
     public AttachmentSummary uploadFile(MultipartFile file, Long userId) throws Exception {
+        return uploadFile(file, userId, false);
+    }
+
+    @Transactional
+    public AttachmentSummary uploadFile(MultipartFile file, Long userId, boolean skipMotionDetect) throws Exception {
         validateUploader(userId);
         File tempFile = fileStorageService.saveTempFile(file);
+        File transcodedVideo = null;
         boolean keepTempFileForAsyncProcessing = false;
         try {
             String contentType = mimeTypeResolver.resolve(
@@ -62,30 +70,64 @@ public class AttachmentCommandService {
             }
 
             FileResource.FileType fileType = classifyFileType(contentType);
-            if (fileType == FileResource.FileType.IMAGE
+            if (!skipMotionDetect
+                    && fileType == FileResource.FileType.IMAGE
                     && (motionPhotoContainerParser.parse(tempFile).isPresent()
-                    || motionPhotoResolver.supports(tempFile)
                     || motionPhotoMp4Detector.hasEmbeddedMp4(tempFile))) {
                 keepTempFileForAsyncProcessing = true;
                 return createPendingMotionPhoto(file, tempFile, userId);
             }
+
+            File uploadFile = tempFile;
+            String uploadContentType = contentType;
+            String sourceType = "Normal";
+            String normalizedOriginalName = normalizeOriginalName(file.getOriginalFilename());
+
+            // Async transcode: save original to MinIO immediately, transcode in background
+            if (fileType == FileResource.FileType.VIDEO
+                    && shouldTranscodeVideo(contentType, file.getOriginalFilename())) {
+                normalizedOriginalName = ensureMp4Extension(normalizedOriginalName);
+                String storagePath = fileStorageService.uploadToMinio(
+                        tempFile, generateObjectName(normalizedOriginalName), contentType);
+
+                FileResource resource = new FileResource();
+                resource.setOriginalName(normalizedOriginalName);
+                resource.setStoragePath(storagePath);
+                resource.setFileType(fileType);
+                resource.setSourceType("PendingTranscode");
+                resource.setMimeType(contentType);
+                resource.setFileSize(tempFile.length());
+                resource.setUploaderId(userId);
+                fillVideoMetadata(resource, tempFile);
+
+                FileResource saved = fileResourceRepository.save(resource);
+                keepTempFileForAsyncProcessing = true;
+                videoTranscodeExecutor.transcodeAndUpload(
+                        saved.getId(), tempFile.getAbsolutePath(),
+                        file.getOriginalFilename(), userId);
+
+                FileResource coverResource = videoCoverWorkflowService.createPlaceholderAndSchedule(
+                        saved, file.getOriginalFilename(), userId);
+                return attachmentSummaryMapper.toUploadSummary(saved, coverResource);
+            }
+
             String storagePath = fileStorageService.uploadToMinio(
-                    tempFile, generateObjectName(file.getOriginalFilename()), contentType);
+                    uploadFile, generateObjectName(normalizedOriginalName), uploadContentType);
 
             FileResource resource = new FileResource();
-            resource.setOriginalName(normalizeOriginalName(file.getOriginalFilename()));
+            resource.setOriginalName(normalizedOriginalName);
             resource.setStoragePath(storagePath);
             resource.setFileType(fileType);
-            resource.setSourceType("Normal");
-            resource.setMimeType(contentType);
-            resource.setFileSize(file.getSize());
+            resource.setSourceType(sourceType);
+            resource.setMimeType(uploadContentType);
+            resource.setFileSize(uploadFile.length());
             resource.setUploaderId(userId);
 
             if (resource.getFileType() == FileResource.FileType.IMAGE) {
                 fillImageMetadata(resource, tempFile);
             }
             if (resource.getFileType() == FileResource.FileType.VIDEO) {
-                fillVideoMetadata(resource, tempFile);
+                fillVideoMetadata(resource, uploadFile);
             }
 
             FileResource saved = fileResourceRepository.save(resource);
@@ -96,6 +138,9 @@ public class AttachmentCommandService {
             }
             return attachmentSummaryMapper.toUploadSummary(saved, coverResource);
         } finally {
+            if (transcodedVideo != null && transcodedVideo.exists()) {
+                transcodedVideo.delete();
+            }
             if (!keepTempFileForAsyncProcessing) {
                 tempFile.delete();
             }
@@ -103,20 +148,20 @@ public class AttachmentCommandService {
     }
 
     @Transactional
-    public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId)
+    public AttachmentSummary uploadLivePhoto(MultipartFile image, MultipartFile video, Long userId)
             throws Exception {
         validateUploader(userId);
-        File jpegFile = fileStorageService.saveTempFile(jpeg);
-        File movFile = fileStorageService.saveTempFile(mov);
+        File imageFile = fileStorageService.saveTempFile(image);
+        File videoFile = fileStorageService.saveTempFile(video);
 
         FileResource savedCover = createPendingDynamicResource(
-                jpeg.getOriginalFilename(),
+                image.getOriginalFilename(),
                 "dynamic/cover_" + UUID.randomUUID() + ".jpg",
                 FileResource.FileType.DYNAMIC_COVER,
                 MediaSourceTypes.IOS_LIVE_PHOTO,
                 userId);
         FileResource savedVideo = createPendingDynamicResource(
-                mov.getOriginalFilename(),
+                video.getOriginalFilename(),
                 "dynamic/video_" + UUID.randomUUID() + ".mp4",
                 FileResource.FileType.DYNAMIC_VIDEO,
                 MediaSourceTypes.IOS_LIVE_PHOTO,
@@ -124,7 +169,7 @@ public class AttachmentCommandService {
         linkRelatedResources(savedCover, savedVideo);
 
         dynamicPhotoProcessingService.scheduleLivePhotoProcessing(
-                jpegFile.getAbsolutePath(), movFile.getAbsolutePath(),
+                imageFile.getAbsolutePath(), videoFile.getAbsolutePath(),
                 savedCover.getId(), savedVideo.getId());
         return attachmentSummaryMapper.toDynamicPhotoSummary(savedCover, savedVideo);
     }
@@ -260,6 +305,35 @@ public class AttachmentCommandService {
             baseName = baseName.substring(0, maxBaseLength);
         }
         return baseName + extension;
+    }
+
+    private boolean shouldTranscodeVideo(String contentType, String originalFilename) {
+        if (contentType == null || contentType.isBlank()) {
+            return true;
+        }
+        String normalizedContentType = contentType.toLowerCase();
+        if (!normalizedContentType.startsWith("video/")) {
+            return false;
+        }
+        if (!"video/mp4".equals(normalizedContentType)) {
+            return true;
+        }
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return false;
+        }
+        String normalizedName = originalFilename.toLowerCase();
+        return !normalizedName.endsWith(".mp4");
+    }
+
+    private String ensureMp4Extension(String originalName) {
+        if (originalName == null || originalName.isBlank()) {
+            return "attachment.mp4";
+        }
+        int dot = originalName.lastIndexOf('.');
+        if (dot <= 0) {
+            return originalName + ".mp4";
+        }
+        return originalName.substring(0, dot) + ".mp4";
     }
 
     private FileResource.FileType classifyFileType(String contentType) {

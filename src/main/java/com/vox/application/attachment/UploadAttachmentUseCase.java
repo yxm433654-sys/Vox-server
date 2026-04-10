@@ -19,8 +19,13 @@ public class UploadAttachmentUseCase {
     }
 
     @Transactional
-    public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception {
-        return attachmentGateway.uploadLivePhoto(jpeg, mov, userId);
+    public AttachmentSummary uploadFile(MultipartFile file, Long userId, boolean skipMotionDetect) throws Exception {
+        return attachmentGateway.uploadFile(file, userId, skipMotionDetect);
+    }
+
+    @Transactional
+    public AttachmentSummary uploadLivePhoto(MultipartFile image, MultipartFile video, Long userId) throws Exception {
+        return attachmentGateway.uploadLivePhoto(image, video, userId);
     }
 
     @Transactional

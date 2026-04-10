@@ -28,8 +28,8 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
             Pattern.compile("apple-fi:ContentIdentifier\\s*=\\s*\"([^\"]+)\"");
 
     @Override
-    public boolean supports(File jpegFile, File movFile) {
-        return jpegFile != null && movFile != null && jpegFile.exists() && movFile.exists();
+    public boolean supports(File imageFile, File movFile) {
+        return imageFile != null && movFile != null && imageFile.exists() && movFile.exists();
     }
 
     @Override
@@ -38,12 +38,12 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
     }
 
     @Override
-    public LivePhotoMetadata extract(File jpegFile, File movFile) throws ParseException {
+    public LivePhotoMetadata extract(File imageFile, File movFile) throws ParseException {
         LivePhotoMetadata metadata = new LivePhotoMetadata();
 
         try {
-            metadata.setAssetIdentifier(extractAssetIdentifier(jpegFile));
-            metadata.setJpegFile(jpegFile);
+            metadata.setAssetIdentifier(extractAssetIdentifier(imageFile));
+            metadata.setJpegFile(imageFile);
             metadata.setContentIdentifier(extractContentIdentifier(movFile));
             metadata.setMovFile(movFile);
 
@@ -58,16 +58,16 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
                 }
             }
 
-            metadata.setVerified(verifyLivePhoto(jpegFile, movFile));
+            metadata.setVerified(verifyLivePhoto(imageFile, movFile));
             return metadata;
         } catch (Exception e) {
             throw new ParseException("Failed to extract Live Photo metadata", e);
         }
     }
 
-    public String extractAssetIdentifier(File jpegFile) throws ParseException {
+    public String extractAssetIdentifier(File imageFile) throws ParseException {
         try {
-            String xmp = extractXmpFromJpeg(jpegFile);
+            String xmp = extractXmpFromImage(imageFile);
             if (xmp != null) {
                 Matcher matcher = ASSET_ID_PATTERN.matcher(xmp);
                 if (matcher.find()) {
@@ -79,7 +79,7 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
                 }
             }
 
-            Metadata metadata = ImageMetadataReader.readMetadata(jpegFile);
+            Metadata metadata = ImageMetadataReader.readMetadata(imageFile);
             for (Directory directory : metadata.getDirectories()) {
                 for (Tag tag : directory.getTags()) {
                     String description = tag.getDescription();
@@ -94,12 +94,12 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
                 }
             }
 
-            String fileName = jpegFile.getName();
+            String fileName = imageFile.getName();
             return fileName.contains(".")
                     ? fileName.substring(0, fileName.lastIndexOf('.'))
                     : fileName;
         } catch (Exception e) {
-            throw new ParseException("Failed to extract asset identifier from JPEG", e);
+            throw new ParseException("Failed to extract asset identifier from image", e);
         }
     }
 
@@ -130,19 +130,19 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
         }
     }
 
-    public boolean verifyLivePhoto(File jpegFile, File movFile) {
+    public boolean verifyLivePhoto(File imageFile, File movFile) {
         try {
-            String jpegId = extractAssetIdentifier(jpegFile);
+            String imageId = extractAssetIdentifier(imageFile);
             String movId = extractContentIdentifier(movFile);
-            return jpegId != null && jpegId.equals(movId);
+            return imageId != null && imageId.equals(movId);
         } catch (Exception e) {
             log.error("Failed to verify Live Photo", e);
             return false;
         }
     }
 
-    private String extractXmpFromJpeg(File jpegFile) {
-        try (RandomAccessFile raf = new RandomAccessFile(jpegFile, "r")) {
+    private String extractXmpFromImage(File imageFile) {
+        try (RandomAccessFile raf = new RandomAccessFile(imageFile, "r")) {
             int b1 = raf.read();
             int b2 = raf.read();
             if (b1 != 0xFF || b2 != 0xD8) {
@@ -186,7 +186,7 @@ public class AppleLivePhotoExtractor implements LivePhotoExtractor {
                 }
             }
         } catch (IOException e) {
-            log.debug("Failed to read XMP from JPEG: {}", e.getMessage());
+            log.debug("Failed to read XMP from image: {}", e.getMessage());
         }
         return null;
     }

@@ -19,6 +19,11 @@ public class AttachmentStorageGateway implements AttachmentGateway {
     }
 
     @Override
+    public AttachmentSummary uploadFile(MultipartFile file, Long userId, boolean skipMotionDetect) throws Exception {
+        return attachmentStorageClient.uploadFile(file, userId, skipMotionDetect);
+    }
+
+    @Override
     public AttachmentSummary uploadLivePhoto(MultipartFile jpeg, MultipartFile mov, Long userId) throws Exception {
         return attachmentStorageClient.uploadLivePhoto(jpeg, mov, userId);
     }

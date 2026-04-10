@@ -4,9 +4,7 @@ import com.vox.infrastructure.media.live.LivePhotoExtractor;
 import com.vox.infrastructure.media.live.LivePhotoMetadata;
 import com.vox.infrastructure.media.live.LivePhotoResolver;
 import com.vox.infrastructure.media.motion.MotionPhotoContainerParser;
-import com.vox.infrastructure.media.motion.MotionPhotoExtractor;
 import com.vox.infrastructure.media.motion.MotionPhotoMp4Detector;
-import com.vox.infrastructure.media.motion.MotionPhotoResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +28,6 @@ import java.util.UUID;
 public class DynamicPhotoProcessingExecutor {
 
     private final LivePhotoResolver livePhotoResolver;
-    private final MotionPhotoResolver motionPhotoResolver;
     private final MotionPhotoContainerParser motionPhotoContainerParser;
     private final MotionPhotoMp4Detector motionPhotoMp4Detector;
     private final MediaTranscodeService mediaTranscodeService;
@@ -44,19 +41,27 @@ public class DynamicPhotoProcessingExecutor {
     private boolean autoTranscode;
 
     @Async("taskExecutor")
-    public void processLivePhoto(String jpegPath, String movPath, Long coverId, Long videoId) {
-        File jpegFile = new File(jpegPath);
-        File movFile = new File(movPath);
+    public void processLivePhoto(String imagePath, String videoPath, Long coverId, Long videoId) {
+        File imageFile = new File(imagePath);
+        File videoFile = new File(videoPath);
         File transcodedVideo = new File(ensureTempDir(), UUID.randomUUID() + "_transcoded.mp4");
+        File convertedImage = new File(ensureTempDir(), UUID.randomUUID() + "_converted.jpg");
         File finalVideo = transcodedVideo;
+        File finalImage = imageFile;
 
         try {
-            LivePhotoExtractor extractor = livePhotoResolver.resolve(jpegFile, movFile);
-            LivePhotoMetadata metadata = extractor.extract(jpegFile, movFile);
+            LivePhotoExtractor extractor = livePhotoResolver.resolve(imageFile, videoFile);
+            LivePhotoMetadata metadata = extractor.extract(imageFile, videoFile);
+
+            if (isHeic(imageFile)) {
+                mediaTranscodeService.convertImageToJpeg(imageFile, convertedImage);
+                finalImage = convertedImage;
+            }
+
             if (autoTranscode) {
-                mediaTranscodeService.transcodeToMp4(movFile, transcodedVideo);
+                mediaTranscodeService.transcodeToMp4(videoFile, transcodedVideo);
             } else {
-                finalVideo = movFile;
+                finalVideo = videoFile;
             }
 
             int[] dimensions = null;
@@ -66,17 +71,25 @@ public class DynamicPhotoProcessingExecutor {
             }
 
             resourcePersistenceService.saveProcessedDynamicPhoto(
-                    coverId, videoId, jpegFile, finalVideo,
+                    coverId, videoId, finalImage, finalVideo,
                     metadata.getDuration(), dimensions);
         } catch (Exception e) {
             log.warn("Failed to process live photo: coverId={}, videoId={}", coverId, videoId, e);
         } finally {
-            safeDelete(jpegFile);
-            safeDelete(movFile);
-            if (finalVideo != movFile) {
+            safeDelete(imageFile);
+            safeDelete(videoFile);
+            if (finalVideo != videoFile) {
                 safeDelete(transcodedVideo);
             }
+            if (finalImage != imageFile) {
+                safeDelete(convertedImage);
+            }
         }
+    }
+
+    private boolean isHeic(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".heic") || name.endsWith(".heif");
     }
 
     @Async("taskExecutor")
@@ -96,10 +109,6 @@ public class DynamicPhotoProcessingExecutor {
                         motionPhotoFile, outputDir, layout.primaryLength());
                 videoFile = motionPhotoMp4Detector.extractVideo(
                         motionPhotoFile, outputDir, layout.videoStart(), layout.videoLength());
-            } else if (motionPhotoResolver.supports(motionPhotoFile)) {
-                MotionPhotoExtractor extractor = motionPhotoResolver.resolve(motionPhotoFile);
-                coverFile = extractor.extractCoverImage(motionPhotoFile, outputDir);
-                videoFile = extractor.extractVideo(motionPhotoFile, outputDir);
             } else {
                 MotionPhotoMp4Detector.EmbeddedMp4 embeddedMp4 =
                         motionPhotoMp4Detector.detect(motionPhotoFile)
