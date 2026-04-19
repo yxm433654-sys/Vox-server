@@ -20,6 +20,8 @@ public class AttachmentResponseMapper {
         response.setType(summary.getType());
         response.setSourceType(summary.getSourceType());
         response.setOriginalName(summary.getOriginalName());
+        response.setMetadataName(summary.getMetadataName());
+        response.setStoredName(summary.getStoredName());
         response.setMimeType(summary.getMimeType());
         response.setSize(summary.getSize());
         response.setWidth(summary.getWidth());
@@ -27,6 +29,10 @@ public class AttachmentResponseMapper {
         response.setDuration(summary.getDuration());
         response.setVerified(summary.getVerified());
         response.setVideoOffset(summary.getVideoOffset());
+        response.setCoverMetadataName(summary.getCoverMetadataName());
+        response.setVideoMetadataName(summary.getVideoMetadataName());
+        response.setCoverStoredName(summary.getCoverStoredName());
+        response.setVideoStoredName(summary.getVideoStoredName());
         response.setCreatedAt(summary.getCreatedAt());
         response.setUploaderId(summary.getUploaderId());
         return response;

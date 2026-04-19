@@ -16,8 +16,14 @@ public class FileResource {
     @Column(name = "original_name")
     private String originalName;
 
+    @Column(name = "metadata_name", length = 255)
+    private String metadataName;
+
     @Column(name = "storage_path", nullable = false, length = 512)
     private String storagePath;
+
+    @Column(name = "stored_name", length = 255)
+    private String storedName;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "file_type", nullable = false)

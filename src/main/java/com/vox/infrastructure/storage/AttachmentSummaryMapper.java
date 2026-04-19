@@ -21,6 +21,8 @@ public class AttachmentSummaryMapper {
         summary.setType(resource.getFileType().name());
         summary.setSourceType(resource.getSourceType());
         summary.setOriginalName(resource.getOriginalName());
+        summary.setMetadataName(resource.getMetadataName());
+        summary.setStoredName(resource.getStoredName());
         summary.setMimeType(resource.getMimeType());
         summary.setSize(resource.getFileSize());
         summary.setWidth(resource.getWidth());
@@ -38,6 +40,8 @@ public class AttachmentSummaryMapper {
         }
         if (coverResource != null) {
             summary.setCoverAttachmentId(coverResource.getId());
+            summary.setCoverMetadataName(coverResource.getMetadataName());
+            summary.setCoverStoredName(coverResource.getStoredName());
             if (!"VideoCoverPending".equals(coverResource.getSourceType())) {
                 summary.setCoverUrl(storageUrlResolver.toClientUrl(
                         coverResource.getId(),
@@ -54,6 +58,11 @@ public class AttachmentSummaryMapper {
         summary.setVideoAttachmentId(videoResource.getId());
         summary.setType("DYNAMIC_PHOTO");
         summary.setSourceType(coverResource.getSourceType());
+        summary.setOriginalName(coverResource.getOriginalName());
+        summary.setCoverMetadataName(coverResource.getMetadataName());
+        summary.setVideoMetadataName(videoResource.getMetadataName());
+        summary.setCoverStoredName(coverResource.getStoredName());
+        summary.setVideoStoredName(videoResource.getStoredName());
         summary.setCreatedAt(coverResource.getCreateTime());
         summary.setUploaderId(coverResource.getUploaderId());
         return summary;

@@ -15,6 +15,8 @@ public class AttachmentSummary {
     private String type;
     private String sourceType;
     private String originalName;
+    private String metadataName;
+    private String storedName;
     private String mimeType;
     private Long size;
     private Integer width;
@@ -22,6 +24,10 @@ public class AttachmentSummary {
     private Float duration;
     private Boolean verified;
     private Long videoOffset;
+    private String coverMetadataName;
+    private String videoMetadataName;
+    private String coverStoredName;
+    private String videoStoredName;
     private LocalDateTime createdAt;
     private Long uploaderId;
 }

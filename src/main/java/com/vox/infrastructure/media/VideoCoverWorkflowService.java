@@ -34,6 +34,7 @@ public class VideoCoverWorkflowService {
         FileResource cover = new FileResource();
         cover.setOriginalName(originalName);
         cover.setStoragePath(coverObjectName);
+        cover.setStoredName(extractStoredName(coverObjectName));
         cover.setFileType(FileResource.FileType.IMAGE);
         cover.setSourceType("VideoCoverPending");
         cover.setMimeType("image/jpeg");
@@ -62,5 +63,13 @@ public class VideoCoverWorkflowService {
         }
 
         return savedCover;
+    }
+
+    private String extractStoredName(String storagePath) {
+        if (storagePath == null || storagePath.isBlank()) {
+            return null;
+        }
+        int slash = storagePath.lastIndexOf('/');
+        return slash >= 0 ? storagePath.substring(slash + 1) : storagePath;
     }
 }

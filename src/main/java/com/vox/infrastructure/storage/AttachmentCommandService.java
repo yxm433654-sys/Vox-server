@@ -93,6 +93,7 @@ public class AttachmentCommandService {
                 FileResource resource = new FileResource();
                 resource.setOriginalName(normalizedOriginalName);
                 resource.setStoragePath(storagePath);
+                resource.setStoredName(extractStoredName(storagePath));
                 resource.setFileType(fileType);
                 resource.setSourceType("PendingTranscode");
                 resource.setMimeType(contentType);
@@ -117,6 +118,7 @@ public class AttachmentCommandService {
             FileResource resource = new FileResource();
             resource.setOriginalName(normalizedOriginalName);
             resource.setStoragePath(storagePath);
+            resource.setStoredName(extractStoredName(storagePath));
             resource.setFileType(fileType);
             resource.setSourceType(sourceType);
             resource.setMimeType(uploadContentType);
@@ -263,6 +265,7 @@ public class AttachmentCommandService {
         FileResource resource = new FileResource();
         resource.setOriginalName(normalizeOriginalName(originalName));
         resource.setStoragePath(storagePath);
+        resource.setStoredName(extractStoredName(storagePath));
         resource.setFileType(fileType);
         resource.setSourceType(sourceType);
         resource.setFileSize(0L);
@@ -284,6 +287,14 @@ public class AttachmentCommandService {
         int dot = originalFilename.lastIndexOf('.');
         String extension = dot >= 0 ? originalFilename.substring(dot) : "";
         return "files/" + UUID.randomUUID() + extension;
+    }
+
+    private String extractStoredName(String storagePath) {
+        if (storagePath == null || storagePath.isBlank()) {
+            return null;
+        }
+        int slash = storagePath.lastIndexOf('/');
+        return slash >= 0 ? storagePath.substring(slash + 1) : storagePath;
     }
 
     private String normalizeOriginalName(String originalName) {

@@ -72,7 +72,9 @@ public class DynamicPhotoProcessingExecutor {
 
             resourcePersistenceService.saveProcessedDynamicPhoto(
                     coverId, videoId, finalImage, finalVideo,
-                    metadata.getDuration(), dimensions);
+                    metadata.getDuration(), dimensions,
+                    metadata.getAssetIdentifier(),
+                    metadata.getContentIdentifier());
         } catch (Exception e) {
             log.warn("Failed to process live photo: coverId={}, videoId={}", coverId, videoId, e);
         } finally {
@@ -132,7 +134,8 @@ public class DynamicPhotoProcessingExecutor {
             try { dimensions = mediaProbeService.getVideoDimensions(finalVideo); } catch (Exception ignored) {}
 
             resourcePersistenceService.saveProcessedDynamicPhoto(
-                    coverId, videoId, coverFile, finalVideo, duration, dimensions);
+                    coverId, videoId, coverFile, finalVideo, duration, dimensions,
+                    null, null);
         } catch (Exception e) {
             log.warn("Failed to process motion photo: coverId={}, videoId={}", coverId, videoId, e);
         } finally {

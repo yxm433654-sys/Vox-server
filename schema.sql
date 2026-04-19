@@ -17,7 +17,9 @@ CREATE TABLE user (
 CREATE TABLE file_resource (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Attachment ID',
     original_name VARCHAR(255) NULL COMMENT 'Original file name',
+    metadata_name VARCHAR(255) NULL COMMENT 'Name or identifier extracted from media metadata when available',
     storage_path VARCHAR(512) NOT NULL COMMENT 'Object storage path',
+    stored_name VARCHAR(255) NULL COMMENT 'Final stored object file name',
     file_type ENUM('IMAGE', 'VIDEO', 'FILE', 'DYNAMIC_COVER', 'DYNAMIC_VIDEO') NOT NULL COMMENT 'Stored resource type',
     source_type VARCHAR(32) NULL COMMENT 'Source type such as Normal, iOS_LivePhoto, Android_MotionPhoto',
     mime_type VARCHAR(64) NULL COMMENT 'MIME type',
