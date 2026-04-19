@@ -38,6 +38,13 @@ public class AttachmentSummaryMapper {
         if (summary == null) {
             return null;
         }
+        if (resource.getFileType() == FileResource.FileType.VIDEO) {
+            summary.setVideoAttachmentId(resource.getId());
+            summary.setVideoUrl(storageUrlResolver.toClientUrl(
+                    resource.getId(),
+                    resource.getStoragePath()
+            ));
+        }
         if (coverResource != null) {
             summary.setCoverAttachmentId(coverResource.getId());
             summary.setCoverMetadataName(coverResource.getMetadataName());
