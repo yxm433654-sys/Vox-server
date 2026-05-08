@@ -7,15 +7,20 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 
 @Component
 public class MotionPhotoMp4Detector {
 
     private static final int MIN_FILE_SIZE = 512 * 1024;
-    private static final int TAIL_READ_SIZE = 4 * 1024 * 1024;
-    private static final List<String> MP4_BRANDS = List.of("mp42", "isom", "avc1", "qt");
+    private static final int MAX_TAIL_SCAN_SIZE = 32 * 1024 * 1024;
+    private static final long MIN_MP4_BOX_SIZE = 16L;
+    private static final Set<String> MP4_BRANDS = Set.of(
+            "mp41", "mp42", "isom", "iso2", "iso3", "iso4", "iso5", "iso6", "iso7", "iso8", "iso9",
+            "avc1", "hvc1", "hev1", "mif1", "msf1", "m4v ", "m4a ", "f4v ", "f4a ", "f4p ",
+            "3gp4", "3gp5", "3gp6", "3g2a", "3g2b", "3g2c", "dash", "cmfc", "cmfs", "msnv", "qt  "
+    );
 
     public boolean hasEmbeddedMp4(File sourceFile) {
         return detect(sourceFile).isPresent();
@@ -32,10 +37,11 @@ public class MotionPhotoMp4Detector {
                 return Optional.empty();
             }
 
-            byte[] tail = readTail(sourceFile, TAIL_READ_SIZE);
+            int tailReadSize = (int) Math.min(size, MAX_TAIL_SCAN_SIZE);
+            byte[] tail = readTail(sourceFile, tailReadSize);
             int tailOffset = findMp4Start(tail);
             if (tailOffset >= 0) {
-                long tailStart = Math.max(0, size - TAIL_READ_SIZE);
+                long tailStart = Math.max(0, size - tail.length);
                 long videoStart = tailStart + tailOffset;
                 long videoLength = size - videoStart;
                 if (videoLength > 0) {
@@ -48,13 +54,6 @@ public class MotionPhotoMp4Detector {
         }
     }
 
-    private boolean hasMp4Ftyp(String value) {
-        if (!value.contains("ftyp")) {
-            return false;
-        }
-        return MP4_BRANDS.stream().anyMatch(value::contains);
-    }
-
     private int findMp4Start(byte[] bytes) {
         if (bytes.length < 12) {
             return -1;
@@ -64,13 +63,53 @@ public class MotionPhotoMp4Detector {
             if (bytes[i] != 'f' || bytes[i + 1] != 't' || bytes[i + 2] != 'y' || bytes[i + 3] != 'p') {
                 continue;
             }
+            if (!hasValidMp4BoxHeader(bytes, i - 4)) {
+                continue;
+            }
             String brand = new String(bytes, i + 4, 4, StandardCharsets.US_ASCII).toLowerCase();
-            if (!MP4_BRANDS.contains(brand)) {
+            if (!isLikelyMp4Brand(brand)) {
                 continue;
             }
             return Math.max(0, i - 4);
         }
         return -1;
+    }
+
+    private boolean hasValidMp4BoxHeader(byte[] bytes, int boxStart) {
+        if (boxStart < 0 || boxStart + 8 > bytes.length) {
+            return false;
+        }
+
+        long boxSize = ((bytes[boxStart] & 0xFFL) << 24)
+                | ((bytes[boxStart + 1] & 0xFFL) << 16)
+                | ((bytes[boxStart + 2] & 0xFFL) << 8)
+                | (bytes[boxStart + 3] & 0xFFL);
+        if (boxSize == 1L) {
+            return true;
+        }
+
+        long remaining = bytes.length - boxStart;
+        return boxSize >= MIN_MP4_BOX_SIZE && boxSize <= remaining;
+    }
+
+    private boolean isLikelyMp4Brand(String brand) {
+        if (brand == null || brand.length() != 4 || !isPrintableAscii(brand)) {
+            return false;
+        }
+        return MP4_BRANDS.contains(brand)
+                || brand.startsWith("mp4")
+                || brand.startsWith("iso")
+                || brand.startsWith("3g");
+    }
+
+    private boolean isPrintableAscii(String value) {
+        for (int i = 0; i < value.length(); i += 1) {
+            char ch = value.charAt(i);
+            if (ch < 0x20 || ch > 0x7E) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private byte[] readTail(File file, int maxBytes) throws IOException {
